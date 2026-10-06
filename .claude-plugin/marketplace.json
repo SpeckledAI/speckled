@@ -1,0 +1,14 @@
+{
+  "name": "speckled",
+  "owner": {
+    "name": "marczenn"
+  },
+  "description": "Speckled: human-approved, spec-driven AI development.",
+  "plugins": [
+    {
+      "name": "speckled",
+      "source": "./",
+      "description": "Agents build from plans your team approved. A spec-driven workflow (brief → roadmap → requirements → design → tasks → code) with a human approval at every step and a traceable record from feature to commit."
+    }
+  ]
+}

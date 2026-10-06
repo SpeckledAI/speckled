@@ -1,0 +1,17 @@
+{
+  "name": "speckled",
+  "displayName": "Speckled",
+  "version": "0.1.0",
+  "description": "Agents build from plans your team approved. A spec-driven workflow (brief → roadmap → requirements → design → tasks → code) with a human approval at every step and a traceable record from feature to commit.",
+  "author": {
+    "name": "marczenn"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "spec-driven",
+    "human-in-the-loop",
+    "governance",
+    "traceability",
+    "planning"
+  ]
+}

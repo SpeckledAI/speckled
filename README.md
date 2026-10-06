@@ -1,0 +1,401 @@
+# Speckled
+
+**Agents build from plans humans agreed on.**
+
+Speckled is a spec-driven workflow for building software with AI coding agents to ensure they aren't just vibe-coding you into oblivion. Build a record of every engineering decision made while working with AI.
+
+Every feature moves through a chain of in-depth documents generatee by role-specified agents, and a named human approves each one before the next step can start:
+
+- **Better AI output.** Agents build from an approved brief, requirements, design and task, not from a one-line prompt.
+- **Cheaper review.** You approve the approach before any code exists, so each PR is small, covers one task, and is checked against known acceptance criteria.
+- **A record you can trace.** Every change traces back through task → design → requirement → roadmap, with who approved each step and when.
+- **Plain files.** Markdown in your repo, reviewed in your normal PR flow. No account needed.
+
+## Contents
+
+- [Install](#install)
+- [Quickstart](#quickstart)
+- [How it works](#how-it-works)
+- [Command reference](#command-reference)
+- [Agents](#agents)
+- [Configuration: `speckled.yaml`](#configuration-speckledyaml)
+- [Documents, IDs and statuses](#documents-ids-and-statuses)
+- [Approvals](#approvals)
+- [Common workflows](#common-workflows)
+- [Troubleshooting](#troubleshooting)
+- [Limitations](#limitations)
+- [What this plugin runs](#what-this-plugin-runs)
+
+## Install
+
+Speckled is a [Claude Code](https://code.claude.com) plugin.
+
+```bash
+claude plugin marketplace add <owner>/speckled
+claude plugin install speckled@speckled
+```
+
+To try it for a single session without installing:
+
+```bash
+git clone https://github.com/<owner>/speckled
+claude --plugin-dir ./speckled
+```
+
+Every command is a slash command prefixed `/speckled:`. Type `/speckled` in a session to see them.
+
+**Requirements:** Claude Code, git, and Python 3.9+ (for the safety hook).
+
+## Quickstart
+
+In the root of your project (new or existing):
+
+```
+/speckled:init
+```
+
+This asks for your project name, where docs should live, which repos the project spans, your firm rules, and who approves each step. It writes `speckled.yaml` and creates the docs folders. Then follow the pipeline:
+
+| # | You run | What happens | You then run |
+|---|---|---|---|
+| 1 | `/speckled:brief` | The analyst drafts the project brief with you | `/speckled:approve BRIEF` |
+| 2 | `/speckled:pdrd` | The PM turns the brief into a phased roadmap of numbered features (F01, F02, …) | `/speckled:approve PDRD` |
+| 3 | `/speckled:frd F01` | The PM writes testable requirements for feature F01 | `/speckled:approve FRD-F01` |
+| 4 | `/speckled:tdd F01` | The architect designs it, using your real code | `/speckled:approve TDD-F01` |
+| 5 | `/speckled:tasks F01` | The planner breaks the design into small, ordered tasks | `/speckled:approve TASKS-F01` |
+| 6 | `/speckled:build` | The engineer implements the next ready task and hands it to you for review | `/speckled:approve T-F01-01` |
+
+Repeat step 6 for each task, and steps 3–6 for each feature. Steps 1–2 happen once per project; after that the roadmap is revised as it changes.
+
+**Existing codebase?** Run `/speckled:map` after `init` so the architect documents what already exists before designing anything new.
+
+## How it works
+
+### Approval gates
+
+The chain starts with **you**. The brief has no parent document: the analyst drafts it with you from your own description of the idea, plus any notes or research you share. Once you approve it, every later document is drafted by an AI agent from an **approved** parent, and can only become approved when **you** run `/speckled:approve`. (`ARCH`, the architecture document, is also a root: it's drafted from your existing code.)
+
+```
+Project Brief
+  |
+  |
+PM agent writes Product Development Roadmap (PDRD) from brief.
+  |
+  | human approval
+  |
+PM agent write Feature Requirements Document (FRD) from PDRD
+  |
+  | human approval
+  |
+Architect agent writes Technical Design Document (TDD) from FRD
+  |
+  | human approval
+  |
+Planner agent writes Eng Tasks Document from TDD
+  |
+  | human approval
+  |
+You & Dev agent implement the code for each task in the Eng Tasks Document.
+```
+
+- **Agents never approve.** No agent may set a document to `approved`. `/speckled:approve` is disabled for the model; only you can type it.
+- **Agents draft from approved parents only.** If the parent isn't approved, the agent stops and tells you. If you explicitly tell it to continue anyway, it adds a visible warning to the new document.
+- **Editing reopens review.** Changing an approved document sends it back to `in-review` and bumps its version, so you approve the change.
+- **Out-of-date work gets flagged.** If a parent changes after a child was drafted from it, agents point it out.
+
+### Drafting with you
+
+Every document-producing command works in one of two modes:
+
+- **Guided (default).** The agent drafts one group of sections at a time, explains its choices and assumptions, lists its questions, and waits for your reply ("next", changes, or answers).
+- **Draft-all.** Say "draft it all" and the agent writes the whole document in one pass, then lists every assumption and open question at the end.
+
+Either way, assumptions are marked `**Assumption:**` inline, open questions go into the document (not only the chat), and progress is saved as you go. When a draft is complete, it is set to `in-review` and the agent tells you what most deserves your attention.
+
+### Firm rules (constraints)
+
+Declare the rules your product must never break in `speckled.yaml` (for example, "strict validation in all form fields" or "no personal data in logs"). Every FRD, TDD and task list ends with a **Constraints Check** that shows how it respects each one. Agents never quietly weaken a constraint; a design that needs an exception records it as an open question for you.
+
+## Command reference
+
+### Setup
+
+#### `/speckled:init`
+Sets up Speckled in a project.
+- Asks for: project name, docs directory (default `docs`), repos, constraints, approvers per gate.
+- Writes: `speckled.yaml`, and creates `<docs>/research`, `frds`, `tdds` and `tasks`. Never overwrites existing files.
+- On an existing codebase, offers to run `/speckled:map` and summarizes any existing docs it finds.
+- If `speckled.yaml` already exists, shows it and asks what to change.
+
+#### `/speckled:map`
+Writes or refreshes `ARCH`, the **current-state** architecture document: what actually exists, including technical debt.
+- Role: architect.
+- Reads: every repo in `speckled.yaml` (structure, manifests and lockfiles, entry points, config, CI, tests, schemas, integrations), and asks you about things the code doesn't show.
+- Writes: `<docs>/architecture.md`. If it already exists, it is updated in place and the change is logged.
+- Tip: on large codebases, tell it which areas to focus on.
+
+### Planning
+
+#### `/speckled:brief`
+Drafts the project brief: problem, target users, solution, goals and metrics, MVP scope, business model, competitors, constraints, risks.
+- Role: analyst. Pushes back on vague problems, unmeasurable goals and oversized MVPs.
+- Writes: `<docs>/brief.md` (`BRIEF`).
+- Offers to copy the brief's constraints into `speckled.yaml`.
+- Next: `/speckled:approve BRIEF`, then `/speckled:pdrd`.
+
+#### `/speckled:research [topic]`
+Market or competitor research, or a research plan for deeper investigation.
+- Role: analyst.
+- Asks which output you want: **research now** (uses web search, cites every source), or a **research plan** (a self-contained prompt for a deep-research tool or a human researcher).
+- Writes: `<docs>/research/<slug>.md`, or `<slug>-plan.md` for a plan.
+
+#### `/speckled:pdrd`
+Drafts or revises the **PDRD** (Product Development Roadmap Document), the project's source of truth for scope: goals, principles, phases, numbered features, out-of-scope items, risks, open questions.
+- Role: product manager. Parent: `BRIEF` (must be approved).
+- New PDRD: agrees the phases with you first, then writes features phase by phase.
+- Revision: keeps every existing feature ID; new features get the next unused number; cut or deferred features keep their ID with a status. Lists which FRDs, TDDs and task lists the change affects.
+- Writes: `<docs>/pdrd.md` (`PDRD`).
+- Next: `/speckled:frd <feature id>`.
+
+#### `/speckled:frd <feature id>`
+Writes a **Feature Requirements Document** for one PDRD feature: user stories, numbered requirements (`FR1`, `NFR1`, …), UX, data, security and compliance, success metrics, scope, acceptance criteria, open questions.
+- Role: product manager. Parent: `PDRD` (must be approved).
+- Without an argument, lists features that don't have an FRD yet, in phase order.
+- Warns if features this one depends on aren't done or approved yet.
+- Writes: `<docs>/frds/F07-<slug>.md` (`FRD-F07`).
+- Next: `/speckled:tdd F07`.
+
+#### `/speckled:tdd <feature id>`
+Writes a **Technical Design Document**: current state, design and alternatives, data model, interfaces, frontend, security, reliability and performance, testing, rollout, and a table tracing every requirement to the design.
+- Role: architect. Parent: `FRD-F07` (must be approved).
+- Reads the FRD, `ARCH`, the PDRD entry and **the actual code** the feature touches.
+- If `ARCH` is missing or older than recent code changes, recommends `/speckled:map` first.
+- Writes: `<docs>/tdds/F07-<slug>.md` (`TDD-F07`).
+- Next: `/speckled:tasks F07`.
+
+#### `/speckled:tasks <feature id>`
+Breaks an approved TDD into small, dependency-ordered development tasks. Each task has context, exact steps, tests, acceptance criteria, and the TDD sections and requirements it implements.
+- Role: planner (never modifies code). Parent: `TDD-F07` (must be approved).
+- Tasks are numbered in dependency order (`T-F07-01`, `T-F07-02`, …), sized to be reviewed in one sitting, with backend, frontend and integration work kept separate. Work only a person can do (creating accounts, buying services) is assigned to a human.
+- Includes a coverage table showing that every TDD section maps to at least one task.
+- Writes: `<docs>/tasks/F07-<slug>.md` (`TASKS-F07`).
+- Next: `/speckled:build T-F07-01`.
+
+### Building
+
+#### `/speckled:build [task id]`
+Implements one approved task with you, then hands it over for review.
+1. Without an argument, shows the next tasks whose dependencies are done and asks which one.
+2. Checks the gate: the task list must be approved and every task this one depends on must be done. Otherwise it stops and explains what's blocking it.
+3. Reads the task, the TDD and FRD sections it cites, and the code it touches. Asks before writing code if anything is unclear.
+4. Implements within the task's scope, writes the specified tests, and runs lint and tests.
+5. Sets the task to `In review` (never `Done`) and hands it over: what changed and why, how it was tested, any deviations, open questions, and a suggested commit message containing the task ID.
+
+Next: review the change, then `/speckled:approve T-F07-01`.
+
+#### `/speckled:review [target]`
+An architect review of code or a document against the approved specs.
+- Target: a task ID, file, diff range or document ID. Defaults to the uncommitted diff.
+- Checks, ranked by severity: correctness against the task, TDD and FRD (and nothing outside their scope), constraints, security, reliability and performance, fit with existing patterns, and whether the tests verify the acceptance criteria.
+- Each finding has a location, a concrete failure scenario and a suggested fix. It doesn't change anything unless you ask.
+
+#### `/speckled:explain [what]`
+Explains the last change (or anything you name) as if teaching a junior engineer: what changed, step by step with file references; why, citing requirement and task IDs; alternatives considered; the concepts needed to understand it; risks and how to verify.
+
+#### `/speckled:pair [topic]`
+Pair-programming mode for debugging, exploration, spikes or design discussion. Small steps, thinking out loud, numbered options. If the session turns into feature work, it suggests capturing that as a task so it goes through review.
+
+### Approving
+
+#### `/speckled:approve <id> [note]`
+Records **your** approval. Only you can run it; it is disabled for the model.
+- Targets: `BRIEF`, `PDRD`, `ARCH`, `FRD-F07`, `TDD-F07`, `TASKS-F07`, or a task such as `T-F07-03`. Without an argument, lists everything that's `in-review`.
+- Uses your `git config user.name` as the approver, and warns if you aren't listed for that gate in `speckled.yaml`.
+- Before recording, points out anything that should block approval: the document isn't `in-review`, the parent isn't approved or has changed since, open questions are unanswered, or the Constraints Check is empty. You confirm.
+- **For a document:** sets `status: approved` and adds `{by, role, date, version, note}` to its `approvals` list.
+- **For a task:** sets the task to `Done` and adds "Approved by … on …". When every task in a list is done, it offers to mark the list done and move the feature's documents to `completed/`.
+
+### Specialist
+
+#### `/speckled:design [feature or asset]`
+Designs visual or motion assets (icons, illustrations, UI graphics, animation) for a feature, based on the FRD's UX section and your brand material, and optionally implements them in the frontend.
+
+#### `/speckled:localize`
+Finds UI text that hasn't been translated and adds translations for the languages your app **already** supports, following your existing i18n setup. Flags translations it's unsure of, and lists i18n problems it notices.
+
+## Agents
+
+The pipeline steps run in your main session, so they can stop and talk to you. The six roles are also available as subagents (`speckled:analyst`, `speckled:pm`, `speckled:architect`, `speckled:planner`, `speckled:dev`, `speckled:designer`) for work that doesn't need back-and-forth, such as asking the architect to review a branch in the background.
+
+| Role | Owns | Never does |
+|---|---|---|
+| **analyst** | Brief, research | Roadmaps, requirements, designs, code |
+| **pm** | PDRD, FRDs | Framework or schema choices, tasks, code |
+| **architect** | `ARCH`, TDDs, architecture reviews | Product scope changes, feature implementation |
+| **planner** | Task lists | Application code, scope beyond the TDD |
+| **dev** | Code for one approved task at a time | Changes to requirements or designs; marking tasks done |
+| **designer** | Visual and motion assets | Product scope changes |
+
+No agent ever approves anything.
+
+## Configuration: `speckled.yaml`
+
+Created by `/speckled:init` at the project root:
+
+```yaml
+project: Acme Payments
+docs_dir: docs              # where Speckled documents live
+repos:                      # every repo this project spans; agents read all of them
+  - .
+  - ../acme-api
+  - ../acme-mobile
+constraints:                # firm rules; every FRD, TDD and task list must respect them
+  - id: C1
+    rule: Every payment requires explicit user confirmation.
+  - id: C2
+    rule: No personal data in logs or queue payloads.
+roles:                      # who may approve each gate (git user names)
+  brief: [alice]
+  pdrd: [alice]
+  frd: [alice, bob]
+  tdd: [carol]
+  tasks: [carol]
+  code: [bob, carol]
+```
+
+A solo developer can list themselves for every gate.
+
+## Documents, IDs and statuses
+
+### Layout
+
+```
+<docs_dir>/
+  brief.md          BRIEF
+  research/         market and competitor research
+  pdrd.md           PDRD, the roadmap and source of truth for scope
+  architecture.md   ARCH, the current-state architecture
+  frds/             FRD-F07   → frds/F07-<slug>.md
+  tdds/             TDD-F07   → tdds/F07-<slug>.md
+  tasks/            TASKS-F07 → tasks/F07-<slug>.md
+```
+
+When a feature's work is finished, its documents move to a `completed/` subfolder next to where they live. They're kept as history, never deleted or renumbered.
+
+### IDs
+
+| ID | Meaning |
+|---|---|
+| `F07` | A feature in the PDRD. **Permanent:** never renumbered or reused, even if the feature moves phase or is cut |
+| `FRD-F07`, `TDD-F07`, `TASKS-F07` | The documents for feature F07 |
+| `T-F07-03` | The third task for F07, in dependency order |
+| `FRD-F07/FR3` | Requirement FR3 in FRD-F07 |
+
+Carry IDs into your work so everything can be traced: commit messages and PR titles reference the task (`feat(scanner): add universe filter [T-F07-03]`), and comments that explain why code exists cite the requirement (`// FRD-F07/FR3`).
+
+### Front matter
+
+Every document starts with:
+
+```yaml
+---
+id: TDD-F07
+title: Market Scanning
+type: tdd                # brief | research | pdrd | arch | frd | tdd | tasks
+feature: F07
+parent: FRD-F07          # the approved document this was drafted from
+parent_version: 2        # the parent's version at drafting time
+status: in-review        # draft | in-review | approved | done | superseded
+version: 1
+updated: 2026-10-01
+approvals: []            # written only by /speckled:approve
+---
+```
+
+### Statuses
+
+| Status | Meaning | Set by |
+|---|---|---|
+| `draft` | Being written | Agent |
+| `in-review` | Ready for a human decision | Agent, at hand-off |
+| `approved` | A human approved this version | `/speckled:approve` only |
+| `done` | Its work is complete | `/speckled:approve` only |
+| `superseded` | Replaced by a newer document | Agent, at your request |
+
+Tasks inside a task list use `Todo` → `In progress` → `In review` → `Done`. Only `/speckled:approve` sets `Done`.
+
+## Approvals
+
+Approvals are entries in each document's front matter:
+
+```yaml
+approvals:
+  - {by: alice, role: frd, date: 2026-10-01, version: 1, note: "OK to defer FR6"}
+  - {by: alice, role: frd, date: 2026-10-08, version: 2}
+```
+
+Each entry records who approved which version. When an approved document is edited, earlier entries stay, so the history shows every version that was approved.
+
+**On a team:** the documents are Markdown in git, so review FRDs and TDDs as ordinary pull requests. Discuss in the PR, and have the approver run `/speckled:approve` before merging.
+
+## Common workflows
+
+**New project:** `init` → `brief` → `pdrd` → for each feature: `frd` → `tdd` → `tasks` → `build` …, with `approve` after every step.
+
+**Existing codebase:** `init` → `map` → write a short brief of where the product is going → `pdrd` (record existing capabilities as features with status Done) → continue per feature.
+
+**Multi-repo project:** list every repo under `repos` in `speckled.yaml`. `map`, `tdd`, `tasks` and `build` read all of them, and each task names the repo it touches.
+
+**Scope change:** run `/speckled:pdrd` and describe the change. Existing feature IDs are kept, new features get the next number, and the agent lists which FRDs, TDDs and task lists are affected. Approve the revised PDRD, then revise the affected documents.
+
+**A task turns out to be wrong:** stop `build`, describe the problem, and fix it at the right level: the task list (`/speckled:tasks`), the design (`/speckled:tdd`) or the requirements (`/speckled:frd`). The edited document goes back to `in-review` for your approval.
+
+**Learning as you go:** after any `build`, run `/speckled:explain`.
+
+## Troubleshooting
+
+**"Run `/speckled:init`" / `speckled.yaml` missing.** Every command reads `speckled.yaml` first. Run `/speckled:init` in the project root.
+
+**The agent won't draft: "parent not approved".** That's a gate working as intended. Approve the parent with `/speckled:approve <id>`, or tell the agent explicitly to continue; it will add a visible warning to the new document.
+
+**Claude says it can't run `/speckled:approve`.** By design: approval is a human action. Type the command yourself.
+
+**"Not a listed approver" warning.** Your `git config user.name` isn't listed for that gate under `roles` in `speckled.yaml`. Fix the name or the roles list, or confirm to continue.
+
+**A command was blocked by `speckled guard`.** The safety hook blocks recursive forced deletes (`rm -rf`) and access to secret `.env` files. Delete specific paths instead, or run the command yourself in your terminal.
+
+**Out-of-date warnings.** A parent document changed after this one was drafted from it. Check whether the change affects this document; revise it if so, and approve again.
+
+## Limitations
+
+Speckled is early (v0.1). In particular:
+
+- **Gates are enforced by instructions, not code.** Agents are told to respect them, and `approve` can't be run by the model, but nothing yet blocks a code edit without an approved task. An enforcement hook and a GitHub PR check are planned.
+- **The approver's identity is `git config user.name`**, which anyone can set. Treat approvals as a team record, not a security control, until verified approvals ship.
+- **A change to the PDRD flags every FRD as out of date**, not only the affected ones. Roadmap amendments and per-feature versioning (F37) will fix this.
+- **The templates are part of the plugin.** To customize them today, fork the plugin.
+- **Claude Code only** for now. Adapters for other coding agents are on the roadmap.
+
+## What this plugin runs
+
+Speckled is mostly instructions: Markdown agents, skills, templates and protocol files that Claude reads. It runs one piece of code:
+
+- **`hooks/guard.py`**, a `PreToolUse` hook that inspects each Bash, Read, Edit, MultiEdit and Write call **locally** before it runs. It blocks recursive forced deletes (`rm -rf` and equivalents) and access to secret `.env` files (`.env.example`, `.env.sample` and `.env.template` stay allowed). It needs only Python 3.9+, has no dependencies, makes no network calls, and writes no files or logs.
+
+Speckled sends no data anywhere, and doesn't change your Claude Code settings or permissions. The documents it creates are plain Markdown files in your repository.
+
+## Acknowledgements
+
+Inspired by the [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD), whose agent-driven planning workflow shaped the process Speckled grew out of. Speckled is an independent project and is not affiliated with or endorsed by BMad Code, LLC.
+
+## Status
+
+Early (v0.1). The plugin is usable today; see [Limitations](#limitations) for what's planned next.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please report security issues privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+[Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
