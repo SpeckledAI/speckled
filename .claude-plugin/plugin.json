@@ -6,6 +6,8 @@
   "author": {
     "name": "marczenn"
   },
+  "homepage": "https://github.com/SpeckledAI/speckled",
+  "repository": "https://github.com/SpeckledAI/speckled",
   "license": "Apache-2.0",
   "keywords": [
     "spec-driven",

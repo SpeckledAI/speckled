@@ -33,14 +33,14 @@ Why should you use Speckled?
 Speckled is a [Claude Code](https://code.claude.com) plugin.
 
 ```bash
-claude plugin marketplace add <owner>/speckled
+claude plugin marketplace add SpeckledAI/speckled
 claude plugin install speckled@speckled
 ```
 
 To try it for a single session without installing:
 
 ```bash
-git clone https://github.com/<owner>/speckled
+git clone https://github.com/SpeckledAI/speckled
 claude --plugin-dir ./speckled
 ```
 
