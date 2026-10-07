@@ -64,6 +64,7 @@ approvals: []            # written ONLY by /speckled:approve
 4. **Edits reopen review.** Changing the content of an `approved` document sets `status: in-review` and increments `version`. Keep the existing `approvals` entries; they record who approved which version.
 5. **Staleness.** If a parent's current `version` is higher than a child's `parent_version`, the child may be out of date. Point this out whenever you notice it.
 6. **Done.** A document becomes `done` when its work is complete (for example, every task in a task list is implemented and approved). Only a human marks work done, through `/speckled:approve`.
+7. Humans commit. Agents never commit, push or open pull requests. They leave every change uncommitted in the working tree, list the changed files, suggest a commit message. The human reviews the diff and commits it. 
 
 ## 6. Constraints check
 
@@ -71,4 +72,4 @@ FRDs, TDDs and task lists end with a **Constraints Check** section. It lists eac
 
 ## 7. Traceability in code
 
-Commits and PR titles made while implementing a task reference its ID, e.g. `feat(scanner): add universe filter [T-F07-03]`. Where a code comment explains why something exists, cite the feature or requirement (e.g. `// FRD-F07/FR3`).
+Commits and PR titles made while implementing a task reference its ID, e.g. `feat(scanner): add universe filter [T-F07-03]`. Where a code comment explains why something exists, cite the feature or requirement (e.g. `// FRD-F07/FR3`) and the commit messages agents suggest for them.

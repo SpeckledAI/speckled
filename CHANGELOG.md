@@ -13,3 +13,4 @@ All notable changes to this project are documented here. The format follows [Kee
 - Document protocol: permanent feature IDs, front matter, status gates, constraints check, traceability conventions.
 - Markdown templates: brief, research, PDRD, FRD, TDD, task list, architecture.
 - `guard.py` safety hook that blocks recursive forced deletes and access to secret `.env` files.
+- Protocol rule that agents never commit, push or open pull requests; humans review and commit every change.

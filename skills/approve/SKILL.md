@@ -26,3 +26,4 @@ Target: $ARGUMENTS
      `{by: <name>, role: <gate>, date: <YYYY-MM-DD>, version: <version>, note: "<note, if given>"}`
    - **Task:** in its task list, set the task's status to `Done`, and add a line under the task: `Approved by <name> on <date>`. If every task is now Done, ask whether to set the task list to `done` and move the feature's documents to `completed/`.
 5. **Confirm** in one line, and name the next step in the pipeline.
+6. **Don't commit**: leave the change for the human to review and commit, and suggest a commit message.
