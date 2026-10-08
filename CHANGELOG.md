@@ -14,3 +14,4 @@ All notable changes to this project are documented here. The format follows [Kee
 - Markdown templates: brief, research, PDRD, FRD, TDD, task list, architecture.
 - `guard.py` safety hook that blocks recursive forced deletes and access to secret `.env` files.
 - Protocol rule that agents never commit, push or open pull requests; humans review and commit every change.
+- `frd`, `tdd` and `tasks` accept a feature ID or any of its document IDs, and the README documents their no-argument behaviour.

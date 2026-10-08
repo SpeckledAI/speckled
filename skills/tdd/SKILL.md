@@ -13,7 +13,7 @@ Paths in this skill are relative to its base directory. The Speckled root is `..
 **Protocol:** follow `../../protocol/authoring.md` and `../../protocol/documents.md`.
 **Parent:** `FRD-F<nn>` (must be approved).
 
-1. Feature: $ARGUMENTS. If none was given, list the approved FRDs that don't have a TDD yet, and ask which one.
+1. Feature: $ARGUMENTS. Accept a feature ID (`F07`) or any of its document IDs (`FRD-F07`, `TDD-F07`, `TASKS-F07`), and use the feature number. If none was given, list the approved FRDs that don't have a TDD yet, and ask which one.
 2. **Freshness check:** if `ARCH` is missing, or its latest Change Log entry is older than the most recent code changes in the affected repos (check `git log`), recommend running `/speckled:map` first, and ask whether to continue.
 3. Read the FRD, `ARCH`, the PDRD entry, and **the actual code** the feature touches.
 4. Ask the human to clarify anything ambiguous in the FRD before designing.
