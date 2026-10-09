@@ -3,3 +3,8 @@ Copyright 2026 Constructive AI Corp.
 
 This product includes software developed by the Speckled contributors.
 Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles PyYAML 6.0.3 (lib/speckled_gate/_vendor/yaml/),
+Copyright (c) 2017-2021 Ingy döt Net
+Copyright (c) 2006-2016 Kirill Simonov
+Licensed under the MIT License (see lib/speckled_gate/_vendor/yaml/LICENSE).
