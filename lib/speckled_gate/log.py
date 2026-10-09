@@ -68,6 +68,12 @@ def git_user(cwd: str | Path | None = None) -> str:
         return ""
 
 
+def display_path(project: Project, path: str) -> tuple[str, str]:
+    """`path` as the log and the CLI show it: (repo, path relative to that repo)."""
+    repo, shown = _relative_paths(project, [path])
+    return repo, shown[0]
+
+
 def _relative_paths(project: Project, paths: list[str]) -> tuple[str, list[str]]:
     """The repo (as written in speckled.yaml) and the paths relative to it."""
     repo, shown = "", []
