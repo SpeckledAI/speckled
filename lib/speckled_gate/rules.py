@@ -25,7 +25,8 @@ The order of checks (TDD-F07 F1 step 6):
     d. code in a listed repo needs a valid active task: its list approved, the task
        In progress or In review, and every task it depends on Done.
 
-`decide()` and `message()` read files but never write them; only `log.append` writes.
+`decide()` and `message()` read files but never write them. The only writers are
+`log.append` (the warn log) and `activate()` (the active-task marker).
 """
 from __future__ import annotations
 
@@ -33,10 +34,12 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import shell
 from .docs import DocError, TaskList, find_task, load_task_lists
+from .log import speckled_folder
 from .project import Project, classify, repo_for
 
 # Shell actions the gate acts on; rm -rf and secret .env access are the guard hook's job.
@@ -198,6 +201,40 @@ def active_task(project: Project) -> str | None:
 
 def _is_task_id(text: str) -> bool:
     return re.fullmatch(r"T-F\d{2,}-\d{2,}", text) is not None
+
+
+def activate(project: Project, task_id: str, by: str = "") -> Verdict:
+    """Make `task_id` the active task, if it may be worked on now.
+
+    Why: tells the hook gate which approved task the current code changes belong to. A
+    tool call doesn't say why a file is being changed, so the gate needs this to check
+    every code edit against a task: its parent list approved, the task In progress or In review,
+    and every task it depends on Done. Once the task is Done (or its list is reopened),
+    the next edit is blocked, so work can't drift past the plan.
+
+    How: validates in code with `validate_task()`, the same check every governed edit
+    gets. In order, the first failure refuses activation: the task lists can be read
+    (config-unreadable); the task is in one of them (no-active-task); its list is
+    approved (task-list-not-approved); the task is In progress or In review, not Todo
+    (task-not-started) or Done (task-done); every dependency exists (dependency-missing)
+    and is Done (dependency-not-done). Only on success does it write
+    `.speckled/active-task`, atomically. On failure the marker is left unchanged. The marker is per developer (git-ignored), because two people on the
+    same repo work on different tasks. `/speckled:build` runs this through
+    `speckled-gate activate`; it's the only way the marker changes, and the agent's own
+    writes to it are blocked as a protected path.
+    """
+    verdict = validate_task(project, task_id)
+    if not verdict.ok:
+        return verdict
+    folder = speckled_folder(project)
+    marker = folder / "active-task"
+    tmp = folder / "active-task.tmp"
+    tmp.write_text(json.dumps({
+        "v": 1, "task": task_id, "by": by,
+        "activated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }) + "\n")
+    os.replace(tmp, marker)
+    return verdict
 
 
 def _check_active_task(project: Project, action: Action) -> Verdict:

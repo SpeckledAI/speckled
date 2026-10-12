@@ -123,6 +123,8 @@ def load_project(root: str | Path, plugin_root=None, plugin_data=None, home=None
     if mode not in MODES:
         return Project(enforcement="block", **base,
                        config_error=f"{CONFIG}: enforcement must be off, warn or block, not '{mode}'")
+    # docs_dir matters in every mode (task activation reads the task lists even when off).
+    base["docs_dir"] = root / str(config.get("docs_dir") or "docs")
     if mode == "off":
         return Project(enforcement="off", **base)
 

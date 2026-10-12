@@ -195,12 +195,17 @@ Breaks an approved TDD into small, dependency-ordered development tasks. Each ta
 ### Building
 
 #### `/speckled:build [task id]`
-Implements one approved task with you, then hands it over for review.
+
+Prompts the Dev agent to implement an approved task with you, then hands it over to you for review.
+
 1. Without an argument, shows the next tasks whose dependencies are done and asks which one.
 2. Checks the gate: the task list must be approved and every task this one depends on must be done. Otherwise it stops and explains what's blocking it.
-3. Reads the task, the TDD and FRD sections it cites, and the code it touches. Asks before writing code if anything is unclear.
-4. Implements within the task's scope, writes the specified tests, and runs lint and tests.
-5. Sets the task to `In review` (never `Done`) and hands it over: what changed and why, how it was tested, any deviations, open questions, and a suggested commit message containing the task ID.
+3. **Activates the task:** sets it to `In progress` and runs `speckled-gate activate <task id>`, which checks in code that the task can be worked on: its list can be read and is approved, the task is `In progress` or `In review`, and every task it depends on exists and is done. If all checks pass, it records the task as your active task. If any check fails, it reports why and stops. These are the same checks every code edit gets while enforcement is on.
+4. Reads the task, the TDD and FRD sections it cites, and the code it touches. Asks before writing code if anything is unclear.
+5. Implements within the task's scope, writes the specified tests, and runs lint and tests.
+6. Sets the task to `In review` (never `Done`) and hands it over: what changed and why, how it was tested, any deviations, open questions, and a suggested commit message containing the task ID.
+
+**Why activate a task?** A tool call doesn't say which task a change is for, so the active task is how Speckled connects code changes to an approved plan. When `enforcement` is on in `speckled.yaml`, every code edit is checked against it: the task's list must be approved, the task `In progress` or `In review`, and its dependencies done. Once the task is `Done`, further edits are blocked until the next task is activated. The active task is stored in `.speckled/active-task` in the planning repo, per developer (it's git-ignored), and only `speckled-gate activate` can set it. Check it at any time with `speckled-gate status`.
 
 Next: review the change, then `/speckled:approve T-F07-01`.
 

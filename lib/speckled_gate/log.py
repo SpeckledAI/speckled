@@ -45,17 +45,27 @@ def entry(project: Project, *, mode: str, rule: str, tool: str, paths: list[str]
 
 def append(project: Project, item: dict) -> None:
     """Append `item` to the log as one line. Raises OSError; the caller decides what to do."""
-    folder = project.root / ".speckled"
-    folder.mkdir(exist_ok=True)
-    gitignore = folder / ".gitignore"
-    if not gitignore.exists():
-        gitignore.write_text(_GITIGNORE)
-    line = (json.dumps(item, ensure_ascii=False, separators=(", ", ": ")) + "\n").encode("utf-8")
+    speckled_folder(project)
+    line =(json.dumps(item, ensure_ascii=False, separators=(", ", ": ")) + "\n").encode("utf-8")
     fd = os.open(project.root / LOG, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
     try:
         os.write(fd, line)  # one write: concurrent sessions never interleave a line
     finally:
         os.close(fd)
+
+
+def speckled_folder(project: Project) -> Path:
+    """`.speckled/` in the planning repo, created with its `.gitignore` if missing.
+
+    The `.gitignore` keeps the per-developer active-task marker and temporary files out
+    of git, while the log itself is committed.
+    """
+    folder = project.root / ".speckled"
+    folder.mkdir(exist_ok=True)
+    gitignore = folder / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text(_GITIGNORE)
+    return folder
 
 
 def git_user(cwd: str | Path | None = None) -> str:

@@ -12,6 +12,9 @@ What it does:
       call, so it never writes anything (not even the warn log) and always exits 0.
     - `speckled-gate status` explains what the gate sees right now: the project, the
       mode, the active task and whether it's valid, the log and the registry entry.
+    - `speckled-gate activate <task-id>` makes a task the active task, after checking in
+      code that it may be worked on now. `/speckled:build` runs it; it's the only way
+      the active-task marker changes. Exit 0 if activated, 1 (with the reason) if not.
 
 Every subcommand also takes `--project <dir>` (skip discovery and use this planning
 repo), `--plugin-root` and `--plugin-data`. A usage error exits with 64.
@@ -24,9 +27,10 @@ import os
 import sys
 from pathlib import Path
 
-from .log import LOG, display_path
+from .docs import find_task, load_task_lists
+from .log import LOG, display_path, git_user
 from .project import Project, find_project, load_project, registry_path
-from .rules import actions_for, active_task, decide, message, validate_task
+from .rules import actions_for, activate, active_task, decide, message, validate_task
 
 USAGE_ERROR = 64
 # lib/speckled_gate/cli.py -> the plugin's root folder
@@ -47,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         return _check(args)
     if args.command == "status":
         return _status(args)
+    if args.command == "activate":
+        return _activate(args)
     _parser().error("choose a command")  # unreachable: argparse requires one
     return USAGE_ERROR
 
@@ -64,6 +70,8 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--tool", required=True, help="tool name, e.g. Edit or Bash")
     check.add_argument("--input", required=True, help="the tool's input, as JSON")
     commands.add_parser("status", parents=[common], help="show what the gate sees")
+    activate_cmd = commands.add_parser("activate", parents=[common], help="make a task the active task")
+    activate_cmd.add_argument("task_id", help="e.g. T-F07-03")
     return parser
 
 
@@ -95,6 +103,25 @@ def _check(args) -> int:
         if result["violations"]:
             result["decision"] = project.enforcement
     print(json.dumps(result, indent=2))
+    return 0
+
+
+# --- activate ------------------------------------------------------------------------
+
+def _activate(args) -> int:
+    """`activate <task-id>`: exit 0 and confirm, or exit 1 with the reason."""
+    project = _project(args)
+    if project is None:
+        print(f"No Speckled project found from {args.cwd}. Run this in the planning repo.", file=sys.stderr)
+        return 1
+    verdict = activate(project, args.task_id, by=git_user(project.root))
+    if not verdict.ok:
+        reason = message(verdict, "block", project).split("\n")[:2]
+        print(f"Not activated ({verdict.rule}): {reason[0].split(': ', 2)[-1]}", file=sys.stderr)
+        print(reason[1], file=sys.stderr)
+        return 1
+    task_list, _ = find_task(load_task_lists(project.docs_dir), args.task_id)
+    print(f"Active task: {args.task_id} ({task_list.id} v{task_list.version}, {task_list.status})")
     return 0
 
 
