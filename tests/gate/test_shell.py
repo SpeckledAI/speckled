@@ -88,6 +88,8 @@ NESTED = [
     ("newline", "echo a\ntouch b.txt", [W("b.txt")]),
     ("cd then write", "cd ../speckled && touch hooks/x.py", [W("../speckled/hooks/x.py")]),
     ("cd then repo-wide", "cd ../speckled; git reset --hard", [W("../speckled", "repo-wide")]),
+    ("cd then find -delete", "cd ../app && find . -delete", [A("delete", "../app", "find")]),
+    ("cd then xargs rm", "cd ../app && ls | xargs rm", [A("delete", "../app", "xargs")]),
     ("git -C path", "git -C ../speckled checkout -- a.py", [W("../speckled/a.py")]),
     ("heredoc writes target", "cat > notes.md <<EOF\nrm -rf /\nEOF", [W("notes.md")]),
 ]

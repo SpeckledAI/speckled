@@ -506,8 +506,9 @@ def _rebase(action: ShellAction, cwd: str) -> ShellAction:
     if not cwd:
         return action
     if action.target is None:
-        # A repo-wide or patch action after `cd x` happens in x.
-        if action.kind == "write":
+        # A file action without a named target (repo-wide, patch, find, xargs) after
+        # `cd x` happens in x.
+        if action.kind in ("write", "delete", "move"):
             return ShellAction(action.kind, cwd, action.detail)
         return action
     return ShellAction(action.kind, _join(cwd, action.target), action.detail)
