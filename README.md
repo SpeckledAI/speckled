@@ -396,7 +396,7 @@ Speckled is early (v0.1). In particular:
 
 Speckled is mostly instructions: Markdown agents, skills, templates and protocol files that Claude reads. It runs one piece of code:
 
-- **`hooks/guard.py`**, a `PreToolUse` hook that inspects each Bash, Read, Edit, MultiEdit and Write call **locally** before it runs. It blocks recursive forced deletes (`rm -rf` and equivalents) and access to secret `.env` files (`.env.example`, `.env.sample` and `.env.template` stay allowed). It needs only Python 3.9+, has no dependencies, makes no network calls, and writes no files or logs.
+- **`hooks/guard.py`**, a `PreToolUse` hook that inspects each Bash, PowerShell, Read, Edit, MultiEdit, Write, NotebookEdit, Grep and Glob call **locally** before it runs. It blocks recursive forced deletes (`rm -rf` and equivalents, including through `bash -c`, `xargs` and `find -delete`) and access to secret `.env` files (`.env.example`, `.env.sample`, `.env.template` and `.env.dist` stay allowed). It needs only Python 3.9+, has no dependencies, makes no network calls, and writes no files or logs.
 
 Speckled sends no data anywhere, and doesn't change your Claude Code settings or permissions. The documents it creates are plain Markdown files in your repository.
 

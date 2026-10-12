@@ -2,61 +2,78 @@
 """Speckled safety guard (PreToolUse hook).
 
 Blocks two classes of tool call before they run:
-  1. Recursive forced deletes (rm -rf and equivalents).
-  2. Reading or writing secret env files (.env, .env.local, ...); example files
-     such as .env.example / .env.sample / .env.template stay allowed.
+  1. Recursive forced deletes (rm -rf and equivalents, also through bash -c, xargs and
+     find -delete).
+  2. Reading or writing secret env files (.env, .env.local, ...), through shell
+     commands, file tools, Grep, Glob and NotebookEdit; example files such as
+     .env.example / .env.sample / .env.template / .env.dist stay allowed.
+
+Shell commands are read with the plugin's shared tokenizer (lib/speckled_gate/shell.py),
+so a mention of .env inside an echo isn't mistaken for access. The guard runs whether
+or not enforcement is on; it never reads speckled.yaml.
 
 Exit code 2 blocks the call and shows the message to the model. Any unexpected
-input fails open (exit 0) so a malformed payload never wedges a session.
+input fails open (exit 0) so a malformed payload never wedges a session. If the
+tokenizer can't be imported, shell commands are allowed, as before it existed.
 """
 from __future__ import annotations
 
 import json
 import re
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+try:
+    from speckled_gate import shell
+except Exception:
+    shell = None
 
 SAFE_ENV_SUFFIXES = (".example", ".sample", ".template", ".dist")
 
-# A path segment that is a secret env file: .env or .env.<anything> that isn't a safe example suffix.
-ENV_FILE = re.compile(r"(?:^|[\s/'\"=<>])(\.env(?:\.[\w.-]+)?)(?=$|[\s'\";|&)])")
+RM_MESSAGE = "Recursive forced delete (rm -rf) is blocked. Delete specific paths, or ask the human to run it."
+ENV_MESSAGE = "Access to secret .env files is blocked. Use .env.example for templates."
 
 
 def is_secret_env(name: str) -> bool:
     return not name.endswith(SAFE_ENV_SUFFIXES)
 
 
-def mentions_secret_env(text: str) -> bool:
-    return any(is_secret_env(m.group(1)) for m in ENV_FILE.finditer(text))
+def is_secret_env_path(path: str) -> bool:
+    name = path.rsplit("/", 1)[-1]
+    return bool(re.fullmatch(r"\.env(\..+)?", name)) and is_secret_env(name)
 
 
-def is_recursive_force_rm(command: str) -> bool:
-    for segment in re.split(r"&&|\|\||;|\|", command):
-        tokens = segment.split()
-        # Skip env assignments and sudo-style prefixes to find the program.
-        while tokens and (tokens[0] in ("sudo", "command", "exec") or "=" in tokens[0]):
-            tokens = tokens[1:]
-        if not tokens or tokens[0].rsplit("/", 1)[-1] != "rm":
-            continue
-        flags = "".join(t.lstrip("-") for t in tokens[1:] if t.startswith("-") and not t.startswith("--"))
-        long_flags = {t for t in tokens[1:] if t.startswith("--")}
-        recursive = "r" in flags.lower() or "--recursive" in long_flags
-        force = "f" in flags or "--force" in long_flags
-        if recursive and force:
-            return True
-    return False
+def glob_targets_secret_env(pattern: str) -> bool:
+    """True if a glob's file-name part names .env files that aren't examples.
+
+    Brace alternatives are checked one by one: "{.env,*.ts}" targets .env.
+    """
+    name = pattern.rsplit("/", 1)[-1]
+    return any(part.startswith(".env") and is_secret_env(part) for part in re.split(r"[{},\s]", name))
 
 
 def check(tool: str, tool_input: dict) -> str | None:
-    if tool == "Bash":
-        command = tool_input.get("command", "")
-        if is_recursive_force_rm(command):
-            return "Recursive forced delete (rm -rf) is blocked. Delete specific paths, or ask the human to run it."
-        if mentions_secret_env(command):
-            return "Access to secret .env files is blocked. Use .env.example for templates."
+    if tool in ("Bash", "PowerShell"):
+        if shell is None:
+            return None
+        kinds = {a.kind for a in shell.actions(tool_input.get("command", ""))}
+        if "rm-recursive-force" in kinds:
+            return RM_MESSAGE
+        if "reads-secret-env" in kinds:
+            return ENV_MESSAGE
     elif tool in ("Read", "Edit", "MultiEdit", "Write"):
-        name = tool_input.get("file_path", "").rsplit("/", 1)[-1]
-        if re.fullmatch(r"\.env(\..+)?", name) and is_secret_env(name):
-            return "Access to secret .env files is blocked. Use .env.example for templates."
+        if is_secret_env_path(tool_input.get("file_path", "")):
+            return ENV_MESSAGE
+    elif tool == "NotebookEdit":
+        if is_secret_env_path(tool_input.get("notebook_path", "")):
+            return ENV_MESSAGE
+    elif tool == "Grep":
+        if is_secret_env_path(tool_input.get("path") or "") or glob_targets_secret_env(tool_input.get("glob") or ""):
+            return ENV_MESSAGE
+    elif tool == "Glob":
+        if glob_targets_secret_env(tool_input.get("pattern") or ""):
+            return ENV_MESSAGE
     return None
 
 
