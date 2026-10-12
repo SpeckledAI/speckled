@@ -15,6 +15,11 @@ What it does:
     - `speckled-gate activate <task-id>` makes a task the active task, after checking in
       code that it may be worked on now. `/speckled:build` runs it; it's the only way
       the active-task marker changes. Exit 0 if activated, 1 (with the reason) if not.
+    - `speckled-gate install-git-hook` copies the commit-time notice
+      (`hooks/pre-commit-notice.py`) into the planning repo's `.git/hooks/pre-commit`.
+      It never replaces a hook it didn't install, and never installs one when
+      `core.hooksPath` is set: in both cases it copies the script beside them as
+      `.git/hooks/speckled-notice` and prints the line for the human to add.
 
 Every subcommand also takes `--project <dir>` (skip discovery and use this planning
 repo), `--plugin-root` and `--plugin-data`. A usage error exits with 64.
@@ -24,6 +29,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,6 +40,7 @@ from .project import Project, find_project, load_project, registry_path
 from .rules import actions_for, activate, active_task, decide, message, validate_task
 
 USAGE_ERROR = 64
+NOTICE_MARKER = "# speckled pre-commit notice v1"
 # lib/speckled_gate/cli.py -> the plugin's root folder
 _PLUGIN_ROOT = Path(__file__).resolve().parents[2]
 
@@ -53,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
         return _status(args)
     if args.command == "activate":
         return _activate(args)
+    if args.command == "install-git-hook":
+        return _install_git_hook(args)
     _parser().error("choose a command")  # unreachable: argparse requires one
     return USAGE_ERROR
 
@@ -72,6 +82,8 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("status", parents=[common], help="show what the gate sees")
     activate_cmd = commands.add_parser("activate", parents=[common], help="make a task the active task")
     activate_cmd.add_argument("task_id", help="e.g. T-F07-03")
+    commands.add_parser("install-git-hook", parents=[common],
+                        help="install the commit-time notice in the planning repo")
     return parser
 
 
@@ -123,6 +135,60 @@ def _activate(args) -> int:
     task_list, _ = find_task(load_task_lists(project.docs_dir), args.task_id)
     print(f"Active task: {args.task_id} ({task_list.id} v{task_list.version}, {task_list.status})")
     return 0
+
+
+# --- install-git-hook ----------------------------------------------------------------
+
+def _install_git_hook(args) -> int:
+    """Install the notice as `.git/hooks/pre-commit`, or say how to add it by hand."""
+    project = _project(args)
+    if project is None:
+        print(f"No Speckled project found from {args.cwd}. Run this in the planning repo.", file=sys.stderr)
+        return 1
+    source = Path(args.plugin_root) / "hooks" / "pre-commit-notice.py"
+    try:
+        hooks_dir = _git_dir(project.root) / "hooks"
+        hooks_path = _git(project.root, "config", "core.hooksPath")
+        hook = hooks_dir / "pre-commit"
+        foreign = hook.exists() and NOTICE_MARKER not in hook.read_text(encoding="utf-8", errors="replace")
+        if hooks_path or foreign:
+            _copy(source, hooks_dir / "speckled-notice")
+            where = f"core.hooksPath is set ({hooks_path})" if hooks_path else "A pre-commit hook already exists"
+            print(f"{where}, so Speckled didn't install its own. To see the commit-time notice, "
+                  "add this line to your pre-commit hook:")
+            print("  python3 .git/hooks/speckled-notice")
+            return 0
+        _copy(source, hook)
+    except OSError as e:
+        print(f"Couldn't install the git hook: {e}", file=sys.stderr)
+        return 1
+    print("Installed .git/hooks/pre-commit")
+    return 0
+
+
+def _git(cwd: Path, *args: str) -> str:
+    """git's output, stripped; "" if the command fails (e.g. an unset config key)."""
+    try:
+        out = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise OSError(f"git {' '.join(args)}: {e}") from e
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def _git_dir(root: Path) -> Path:
+    """The repo's shared git folder (`.git`, also from a worktree)."""
+    common = _git(root, "rev-parse", "--git-common-dir")
+    if not common:
+        raise OSError(f"{root} isn't a git repository")
+    return (root / common).resolve()
+
+
+def _copy(source: Path, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".tmp")
+    shutil.copyfile(source, tmp)
+    tmp.chmod(0o755)
+    os.replace(tmp, dest)
 
 
 # --- status --------------------------------------------------------------------------
