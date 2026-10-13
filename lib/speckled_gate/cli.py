@@ -37,7 +37,7 @@ from pathlib import Path
 from .docs import find_task, load_task_lists
 from .log import LOG, display_path, git_user
 from .project import Project, find_project, load_project, registry_path
-from .rules import actions_for, activate, active_task, decide, message, validate_task
+from .rules import actions_for, activate, active_marker, decide, message, validate_task
 
 USAGE_ERROR = 64
 NOTICE_MARKER = "# speckled pre-commit notice v1"
@@ -209,11 +209,11 @@ def _status(args) -> int:
         return 0
     print("Code repos:    " + (", ".join(project.repo_names) or "(none listed)"))
 
-    task = active_task(project)
+    task, files = active_marker(project)
     if task is None:
         print("Active task:   none (set one with /speckled:build <task-id>)")
     else:
-        verdict = validate_task(project, task)
+        verdict = validate_task(project, task, files)
         if verdict.ok:
             print(f"Active task:   {task}, valid")
         else:

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from speckled_gate.docs import find_task, load_task_lists
 from speckled_gate.project import find_project, load_project
 from speckled_gate.rules import actions_for, decide, message, ready_tasks
 
@@ -54,10 +55,12 @@ class Fixture(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def project(self, active=None, plugin_root=None):
+    def project(self, active=None, plugin_root=None, files=None):
+        """The fixture project; `active` writes the marker, with `files` if given (D5)."""
         if active:
             (self.plans / ".speckled").mkdir(exist_ok=True)
-            (self.plans / ".speckled" / "active-task").write_text(json.dumps({"v": 1, "task": active}))
+            marker = {"v": 1, "task": active, **({"files": files} if files else {})}
+            (self.plans / ".speckled" / "active-task").write_text(json.dumps(marker))
         return find_project(self.plans, plugin_root or self.plugin, self.data, self.home)
 
     def verdicts(self, project, tool, tool_input, cwd):
@@ -67,6 +70,19 @@ class Fixture(unittest.TestCase):
         """The first violated rule for this tool call, or None if it's allowed."""
         broken = [v.rule for v in self.verdicts(project, tool, tool_input, cwd or self.plans) if not v.ok]
         return broken[0] if broken else None
+
+
+def pointer_files(fixture, task_id):
+    """The files `activate` would record for `task_id` (lists holding it and its known deps)."""
+    if not task_id:
+        return None
+    docs = fixture.plans / "docs"
+    lists = load_task_lists(docs)
+    found = find_task(lists, task_id)
+    if found is None:
+        return None
+    holders = [found[0]] + [f[0] for f in (find_task(lists, d) for d in found[1].depends_on) if f]
+    return list(dict.fromkeys(Path(os.path.relpath(t.path, docs)).as_posix() for t in holders))
 
 
 def edit(path):
@@ -134,6 +150,16 @@ class RuleTable(Fixture):
                     marker.unlink()
                 project = self.project(active)
                 self.assertEqual(self.rule(project, tool, tool_input, cwd), expected)
+
+    def test_same_verdicts_with_the_task_pointer(self):
+        """D5 (TDD-F07 v4): recorded task-list files never change a verdict [T-F07-16]."""
+        for name, active, (tool, tool_input), cwd, expected in self.rows():
+            with self.subTest(name):
+                marker = self.plans / ".speckled" / "active-task"
+                if marker.exists():
+                    marker.unlink()
+                self.assertEqual(self.rule(self.project(active, files=pointer_files(self, active)),
+                                           tool, tool_input, cwd), expected)
 
     def test_wrong_start_folder(self):
         project = self.project("T-F01-02")

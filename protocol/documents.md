@@ -132,7 +132,7 @@ Every block or warning names one rule:
 | File | Committed | Contents |
 |---|---|---|
 | `.gitignore` | Yes | `active-task` and `*.tmp`. |
-| `active-task` | No (per developer) | `{"v": 1, "task": "T-F07-03", "activated_at": "<UTC time>", "by": "<git user.name>"}`. Written only by `speckled-gate activate`, which `/speckled:build` runs. |
+| `active-task` | No (per developer) | `{"v": 1, "task": "T-F07-03", "activated_at": "<UTC time>", "by": "<git user.name>", "files": ["tasks/F07-<slug>.md"]}`. Written only by `speckled-gate activate`, which `/speckled:build` runs. `files` lists the task lists (relative to `docs_dir`) that hold the task and its dependencies, so each check reads only those. It's a hint: if those files no longer hold the task or a dependency, every task list is read instead, and a marker without `files` works the same way. |
 | `log.jsonl` | Yes | The enforcement log, one JSON object per line. Append-only. |
 
 ### Log format, version 1

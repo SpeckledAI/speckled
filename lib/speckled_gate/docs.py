@@ -17,7 +17,8 @@ What it does:
           - **Status:** In progress                 (Todo | In progress | In review | Done)
 
     - `load_task_lists()` reads every task list in `<docs_dir>/tasks/` and
-      `<docs_dir>/tasks/completed/`, skipping other documents.
+      `<docs_dir>/tasks/completed/`, skipping other documents; `load_task_list()` reads
+      one file the same way.
     - `find_task()` looks a task ID up across all lists, because a task can depend on
       a task in another feature's list.
 
@@ -177,16 +178,21 @@ def load_task_lists(docs_dir: str | Path) -> list[TaskList]:
     root = Path(docs_dir) / "tasks"
     # Finished features move to completed/; their tasks can still be dependencies.
     files = sorted(root.glob("*.md")) + sorted((root / "completed").glob("*.md"))
-    lists = []
-    for file in files:
-        text = file.read_text(encoding="utf-8")
-        try:
-            kind = front_matter(text).get("type")
-        except YamlError as e:
-            raise DocError(str(file), e.line, e.reason) from None
-        if kind == "tasks":
-            lists.append(parse_task_list(text, str(file)))
-    return lists
+    return [task_list for task_list in map(load_task_list, files) if task_list is not None]
+
+
+def load_task_list(file: str | Path) -> TaskList | None:
+    """One task list file, or None if its front matter isn't `type: tasks`.
+
+    Raises DocError if the front matter or the tasks can't be read, and OSError if the
+    file can't be opened.
+    """
+    text = Path(file).read_text(encoding="utf-8")
+    try:
+        kind = front_matter(text).get("type")
+    except YamlError as e:
+        raise DocError(str(file), e.line, e.reason) from None
+    return parse_task_list(text, str(file)) if kind == "tasks" else None
 
 
 def find_task(lists: list[TaskList], task_id: str) -> tuple[TaskList, Task] | None:

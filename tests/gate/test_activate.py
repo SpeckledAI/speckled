@@ -5,7 +5,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from speckled_gate.cli import main
-from speckled_gate.rules import actions_for, activate, decide, validate_task
+from speckled_gate.rules import actions_for, activate, active_marker, decide, validate_task
 
 # Imported as a module so unittest doesn't collect (and re-run) its test classes here.
 from . import test_rules
@@ -119,3 +119,109 @@ class BuildSkill(test_rules.Fixture):
         self.assertIn("If it fails, set the status back", step)
         self.assertIn("stop", step)
         self.assertLess(text.index("2. **Check the gate.**"), text.index("3. **Activate the task.**"))
+
+
+class TaskPointer(test_rules.Fixture):
+    """The task-list files recorded at activation (TDD-F07 v4 D5) [T-F07-16]."""
+
+    F03 = test_rules.task_list("TASKS-F03", "approved", [
+        ("T-F03-01", "Done", []),
+        ("T-F03-02", "In progress", ["T-F03-01", "T-F01-01"]),
+    ])
+
+    def setUp(self):
+        super().setUp()
+        self.tasks = self.plans / "docs" / "tasks"
+        (self.tasks / "F03.md").write_text(self.F03)
+
+    def files(self):
+        return json.loads((self.plans / ".speckled" / "active-task").read_text())["files"]
+
+    def edit_rule(self, project):
+        action = actions_for("Edit", {"file_path": str(self.app / "src" / "x.py")}, project, str(self.plans))[0]
+        return decide(project, action).rule
+
+    def test_records_the_list_holding_the_task(self):
+        self.assertTrue(activate(self.project(), "T-F01-02").ok)
+        self.assertEqual(self.files(), ["tasks/F01.md"])
+
+    def test_records_dependency_lists_once_each(self):
+        self.assertTrue(activate(self.project(), "T-F03-02").ok)
+        self.assertEqual(self.files(), ["tasks/F03.md", "tasks/F01.md"])
+
+    def test_unrelated_broken_list_is_not_read(self):
+        project = self.project()
+        self.assertTrue(activate(project, "T-F01-02").ok)
+        (self.tasks / "F09.md").write_text(test_rules.task_list("TASKS-F09", "approved", [("T-F09-01", "Doing", [])]))
+        self.assertIsNone(self.edit_rule(project))
+        # Without the pointer, every list is read, and the broken one blocks (NFR4).
+        self.marker_without_files()
+        self.assertEqual(self.edit_rule(project), "config-unreadable")
+
+    def test_broken_recorded_list_blocks(self):
+        project = self.project()
+        self.assertTrue(activate(project, "T-F01-02").ok)
+        text = (self.tasks / "F01.md").read_text()
+        (self.tasks / "F01.md").write_text(text.replace("- **Status:** Todo", "- **Status:** Doing", 1))
+        self.assertEqual(self.edit_rule(project), "config-unreadable")
+
+    def test_list_moved_to_completed(self):
+        project = self.project()
+        self.assertTrue(activate(project, "T-F01-02").ok)
+        (self.tasks / "completed").mkdir()
+        (self.tasks / "F01.md").rename(self.tasks / "completed" / "F01.md")
+        self.assertIsNone(self.edit_rule(project))
+        self.set_status(self.tasks / "completed" / "F01.md", "T-F01-02", "Done")
+        self.assertEqual(self.edit_rule(project), "task-done")
+
+    def test_dependency_moved_to_another_list(self):
+        project = self.project()
+        self.assertTrue(activate(project, "T-F03-02").ok)
+        f01 = (self.tasks / "F01.md").read_text()
+        start = f01.index("### T-F01-01")
+        end = f01.index("### T-F01-02")
+        (self.tasks / "F01.md").write_text(f01[:start] + f01[end:])
+        (self.tasks / "F04.md").write_text(test_rules.task_list("TASKS-F04", "approved", [("T-F01-01", "Done", [])]))
+        self.assertIsNone(self.edit_rule(project))
+        self.set_status(self.tasks / "F04.md", "T-F01-01", "In review")
+        self.assertEqual(self.edit_rule(project), "dependency-not-done")
+
+    def test_recorded_file_deleted(self):
+        project = self.project()
+        self.assertTrue(activate(project, "T-F03-02").ok)
+        (self.tasks / "F01.md").unlink()
+        self.assertEqual(self.edit_rule(project), "dependency-missing")
+
+    def test_malformed_files_are_ignored(self):
+        project = self.project()
+        for files in [["../F01.md"], ["/tmp/F01.md"], ["tasks/../../x.md"], [7], "tasks/F01.md", [],
+                      ["docs/tasks/F01.md"]]:
+            with self.subTest(files=files):
+                self.write_marker("T-F01-02", files)
+                self.assertEqual(active_marker(project), ("T-F01-02", None))
+                self.assertIsNone(self.edit_rule(project))
+
+    def test_marker_without_files_still_works(self):
+        project = self.project()
+        self.write_marker("T-F01-02", None)
+        self.assertEqual(active_marker(project), ("T-F01-02", None))
+        self.assertIsNone(self.edit_rule(project))
+
+    # helpers
+
+    def write_marker(self, task, files):
+        (self.plans / ".speckled").mkdir(exist_ok=True)
+        data = {"v": 1, "task": task, **({} if files is None else {"files": files})}
+        (self.plans / ".speckled" / "active-task").write_text(json.dumps(data))
+
+    def marker_without_files(self):
+        data = json.loads((self.plans / ".speckled" / "active-task").read_text())
+        data.pop("files")
+        (self.plans / ".speckled" / "active-task").write_text(json.dumps(data))
+
+    def set_status(self, path, task, status):
+        text = path.read_text()
+        start = text.index(f"### {task}")
+        rest = text[start:]
+        line = next(l for l in rest.splitlines() if l.startswith("- **Status:**"))
+        path.write_text(text[:start] + rest.replace(line, f"- **Status:** {status}", 1))

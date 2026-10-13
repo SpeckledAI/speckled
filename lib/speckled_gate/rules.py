@@ -35,10 +35,10 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from . import shell
-from .docs import DocError, TaskList, find_task, load_task_lists
+from .docs import DocError, TaskList, find_task, load_task_list, load_task_lists
 from .log import speckled_folder
 from .project import Project, classify, repo_for
 
@@ -159,14 +159,44 @@ def decide(project: Project, action: Action) -> Verdict:
     return _check_active_task(project, action)
 
 
-def validate_task(project: Project, task_id: str | None) -> Verdict:
-    """Whether `task_id` may be worked on now; shared by `decide` and task activation."""
+def validate_task(project: Project, task_id: str | None, files: list[str] | None = None) -> Verdict:
+    """Whether `task_id` may be worked on now; shared by `decide` and task activation.
+
+    `files` (from the active-task marker, TDD-F07 D5) names the task lists that hold the
+    task and its dependencies. Only those are read, freshly each time; if they no longer
+    hold what was recorded, every list is read instead. The verdict is the same either
+    way, except that a broken list the task doesn't need is never read.
+    """
     if not task_id:
         return Verdict("no-active-task")
     try:
-        lists = load_task_lists(project.docs_dir)
+        lists = _recorded_lists(project, task_id, files) if files else None
+        if lists is None:
+            lists = load_task_lists(project.docs_dir)
     except DocError as e:
         return Verdict("config-unreadable", facts={"error": str(e)})
+    return _judge(lists, task_id)
+
+
+def _recorded_lists(project: Project, task_id: str, files: list[str]) -> list[TaskList] | None:
+    """The recorded task lists, or None if they don't hold the task and its dependencies."""
+    lists = []
+    for name in files:
+        try:
+            task_list = load_task_list(project.docs_dir / name)
+        except OSError:
+            return None  # moved or deleted since activation
+        if task_list is None:
+            return None
+        lists.append(task_list)
+    found = find_task(lists, task_id)
+    if found is None or any(find_task(lists, dep) is None for dep in found[1].depends_on):
+        return None
+    return lists
+
+
+def _judge(lists: list[TaskList], task_id: str) -> Verdict:
+    """The code-gate checks for `task_id`, against already loaded task lists."""
     found = find_task(lists, task_id)
     if found is None:
         return Verdict("no-active-task", task=task_id, facts={"unknown": task_id})
@@ -191,12 +221,33 @@ def validate_task(project: Project, task_id: str | None) -> Verdict:
 
 def active_task(project: Project) -> str | None:
     """The task in `.speckled/active-task`, or None if there isn't a readable one."""
+    return active_marker(project)[0]
+
+
+def active_marker(project: Project) -> tuple[str | None, list[str] | None]:
+    """The active task and its recorded task-list files (None if absent or malformed)."""
     try:
         data = json.loads((project.root / ".speckled" / "active-task").read_text(encoding="utf-8"))
-        task = data.get("task") if isinstance(data, dict) else None
-        return task if isinstance(task, str) and _is_task_id(task) else None
     except (OSError, ValueError):
-        return None
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    task = data.get("task")
+    if not (isinstance(task, str) and _is_task_id(task)):
+        return None, None
+    files = data.get("files")
+    if not (isinstance(files, list) and files and all(_is_task_file(f) for f in files)):
+        files = None
+    return task, files
+
+
+def _is_task_file(name) -> bool:
+    """A relative path under `tasks/` with no `..`, as `activate` records them."""
+    if not isinstance(name, str):
+        return False
+    path = PurePosixPath(name)
+    return (not path.is_absolute() and path.parts[:1] == ("tasks",) and ".." not in path.parts
+            and path.suffix == ".md")
 
 
 def _is_task_id(text: str) -> bool:
@@ -218,8 +269,10 @@ def activate(project: Project, task_id: str, by: str = "") -> Verdict:
     approved (task-list-not-approved); the task is In progress or In review, not Todo
     (task-not-started) or Done (task-done); every dependency exists (dependency-missing)
     and is Done (dependency-not-done). Only on success does it write
-    `.speckled/active-task`, atomically. On failure the marker is left unchanged. The marker is per developer (git-ignored), because two people on the
-    same repo work on different tasks. `/speckled:build` runs this through
+    `.speckled/active-task`, atomically, including the task-list files that hold the
+    task and its dependencies, so later checks read only those (TDD-F07 D5). On failure
+    the marker is left unchanged. The marker is per developer (git-ignored), because two
+    people on the same repo work on different tasks. `/speckled:build` runs this through
     `speckled-gate activate`; it's the only way the marker changes, and the agent's own
     writes to it are blocked as a protected path.
     """
@@ -232,13 +285,23 @@ def activate(project: Project, task_id: str, by: str = "") -> Verdict:
     tmp.write_text(json.dumps({
         "v": 1, "task": task_id, "by": by,
         "activated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "files": _files_for(project, task_id),
     }) + "\n")
     os.replace(tmp, marker)
     return verdict
 
 
+def _files_for(project: Project, task_id: str) -> list[str]:
+    """The task lists holding `task_id` and its dependencies, relative to `docs_dir` (D5)."""
+    lists = load_task_lists(project.docs_dir)
+    task_list, task = find_task(lists, task_id)
+    holders = [task_list] + [find_task(lists, dep)[0] for dep in task.depends_on]
+    files = [Path(os.path.relpath(t.path, project.docs_dir)).as_posix() for t in holders]
+    return list(dict.fromkeys(files))  # without duplicates, in order
+
+
 def _check_active_task(project: Project, action: Action) -> Verdict:
-    verdict = validate_task(project, active_task(project))
+    verdict = validate_task(project, *active_marker(project))
     verdict.action = action
     return verdict
 
