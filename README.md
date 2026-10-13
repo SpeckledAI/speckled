@@ -11,7 +11,7 @@ Why should you use Speckled?
 - **Prompts suck** - No matter how long or detailed, or multiple your prompt is, it ain't enough. Agents build from an approved brief, feature requirements, TDDs, designs and eng tasks.
 - **Human review.** - A chosen human always approves both the approach and the code. Each PR is small, covers one task, and is checked against known acceptance criteria.
 - **Trace it back** - Every change traces back through task → design → requirement → roadmap, with who approved each step and when.
-- **Plain files.** - Markdown docs live in your repo, reviewed in your normal PR flow. As it should be.
+- **Plain files.** - Markdown docs live in a private planning repo next to your code, reviewed in your normal PR flow. As it should be.
 
 ## Contents
 
@@ -46,17 +46,23 @@ claude --plugin-dir ./speckled
 
 Every command is a slash command prefixed `/speckled:`. Type `/speckled` in a session to see them.
 
-**Requirements:** Claude Code, git, and Python 3.9+ (for the safety hook).
+**Requirements:** Claude Code, git, and Python 3.9+ (for the hooks). Nothing else to install.
 
 ## Quickstart
 
-In the root of your project (new or existing):
+In your code repo (new or existing):
 
 ```
 /speckled:init
 ```
 
-This asks for your project name, where docs should live, which repos the project spans, your firm rules, and who approves each step. It writes `speckled.yaml` and creates the docs folders. Then follow the pipeline:
+This asks for your project name, which code repos the project spans, your firm rules, who approves each step, and the enforcement mode. It creates a separate **planning repo** next to your code (`../<project>-plans` by default) holding `speckled.yaml` and the docs folders, so your plans stay private even if your code is public. It ends by printing the command that starts sessions from the planning repo:
+
+```bash
+cd ../<project>-plans && claude --add-dir ../<your code repo>
+```
+
+Run every Speckled command from there. Then follow the pipeline:
 
 | # | You run | What happens | You then run |
 |---|---|---|---|
@@ -130,10 +136,12 @@ Declare the rules your product must never break in `speckled.yaml` (for example,
 
 #### `/speckled:init`
 Sets up Speckled in a project.
-- Asks for: project name, docs directory (default `docs`), repos, constraints, approvers per gate.
-- Writes: `speckled.yaml`, and creates `<docs>/research`, `frds`, `tdds` and `tasks`. Never overwrites existing files.
+- Asks for: project name, planning repo path (default `../<project>-plans`), docs directory (default `docs`), code repos, constraints, approvers per gate, and the enforcement mode (`off`, `warn` or `block`; it suggests `warn` for an existing codebase).
+- Creates the planning repo with `git init`, writes `speckled.yaml` there (`repos` lists code repos only), and creates `<docs>/research`, `frds`, `tdds` and `tasks`. Never overwrites existing files.
+- With enforcement on, installs the commit-time notice in the planning repo (`speckled-gate install-git-hook`).
 - On an existing codebase, offers to run `/speckled:map` and summarizes any existing docs it finds.
-- If `speckled.yaml` already exists, shows it and asks what to change.
+- Ends by printing the command that starts sessions from the planning repo.
+- Run in an existing planning repo, it shows `speckled.yaml` and asks what to change. It never creates a second planning repo.
 
 #### `/speckled:map`
 Writes or refreshes `ARCH`, the **current-state** architecture document: what actually exists, including technical debt.
@@ -256,13 +264,16 @@ No agent ever approves anything.
 
 ## Configuration: `speckled.yaml`
 
-Created by `/speckled:init` at the project root:
+Created by `/speckled:init` at the root of the planning repo:
 
 ```yaml
 project: Acme Payments
-docs_dir: docs              # where Speckled documents live
-repos:                      # every repo this project spans; agents read all of them
-  - .
+docs_dir: docs              # where Speckled documents live, inside the planning repo
+enforcement: warn           # off | warn | block (missing means off)
+enforcement_exempt:         # optional: files any task may change, relative to each code repo
+  - "*.lock"
+repos:                      # the code repos this project spans; agents read all of them
+  - ../acme-web
   - ../acme-api
   - ../acme-mobile
 constraints:                # firm rules; every FRD, TDD and task list must respect them
@@ -280,6 +291,30 @@ roles:                      # who may approve each gate (git user names)
 ```
 
 A solo developer can list themselves for every gate.
+
+### The planning repo
+
+Speckled keeps plans in their own git repo next to your code repos, never inside them. Your plans stay private even if your code is public, and one set of plans can cover several code repos. `repos` lists only the code repos, as paths relative to the planning repo. Start every session in the planning repo, adding each code repo:
+
+```bash
+cd ~/code/acme-plans && claude --add-dir ../acme-web --add-dir ../acme-api
+```
+
+### Enforcement
+
+`enforcement` decides whether the approval gates are also checked in code, by a hook that runs before each tool call:
+
+- **`off`** (or missing): nothing is checked. Gates are followed through the agents' instructions only.
+- **`warn`**: an agent action that breaks a rule goes ahead, but the agent is told and the action is logged in `.speckled/log.jsonl`. Good for trying Speckled on an existing codebase.
+- **`block`**: an action that breaks a rule is stopped, with a message saying what to do next.
+
+With enforcement on:
+- Changing code in a listed repo needs an **active task** (set by `/speckled:build`): its task list approved, the task `In progress` or `In review`, and every task it depends on done.
+- Agents can't change the gate's own controls: `speckled.yaml`, `.speckled/`, git hooks, Claude Code settings files, or the plugin.
+- Agents can't commit, push or open pull requests.
+- Planning documents stay free to edit.
+
+`enforcement_exempt` lists patterns (Python `fnmatch`, where `*` also matches `/`) for code-repo files any task may change. Only you can change these settings: agents can't edit `speckled.yaml` while enforcement is on. The full rules are in [`protocol/documents.md` §8](protocol/documents.md).
 
 ## Documents, IDs and statuses
 
@@ -360,7 +395,7 @@ Each entry records who approved which version. When an approved document is edit
 
 **Existing codebase:** `init` → `map` → write a short brief of where the product is going → `pdrd` (record existing capabilities as features with status Done) → continue per feature.
 
-**Multi-repo project:** list every repo under `repos` in `speckled.yaml`. `map`, `tdd`, `tasks` and `build` read all of them, and each task names the repo it touches.
+**Multi-repo project:** list every code repo under `repos` in `speckled.yaml`, and add each one when you start a session (`--add-dir`). `map`, `tdd`, `tasks` and `build` read all of them, and each task names the repo it touches.
 
 **Scope change:** run `/speckled:pdrd` and describe the change. Existing feature IDs are kept, new features get the next number, and the agent lists which FRDs, TDDs and task lists are affected. Approve the revised PDRD, then revise the affected documents.
 
@@ -370,7 +405,7 @@ Each entry records who approved which version. When an approved document is edit
 
 ## Troubleshooting
 
-**"Run `/speckled:init`" / `speckled.yaml` missing.** Every command reads `speckled.yaml` first. Run `/speckled:init` in the project root.
+**"Run `/speckled:init`" / `speckled.yaml` missing.** Every command reads `speckled.yaml` first. Start the session in your planning repo, or run `/speckled:init` from your code repo to create one.
 
 **The agent won't draft: "parent not approved".** That's a gate working as intended. Approve the parent with `/speckled:approve <id>`, or tell the agent explicitly to continue; it will add a visible warning to the new document.
 
@@ -380,13 +415,32 @@ Each entry records who approved which version. When an approved document is edit
 
 **A command was blocked by `speckled guard`.** The safety hook blocks recursive forced deletes (`rm -rf`) and access to secret `.env` files. Delete specific paths instead, or run the command yourself in your terminal.
 
+**A change was blocked (or warned about) by `speckled`.** With enforcement on, each message names what's wrong and the next step. Messages start with `speckled: blocked:` in `block` mode, or `speckled (warn): would block:` in `warn` mode, where the action still goes ahead and is logged. By rule:
+
+| Rule | What it means | What to do |
+|---|---|---|
+| `no-active-task` | No task is active, or the active task isn't in any task list. | Run `/speckled:build <task id>` for a ready task. |
+| `task-not-started` | The active task is still `Todo`. | Run `/speckled:build <task id>`, which starts it. |
+| `task-done` | The active task is already `Done`. | Start the next task with `/speckled:build`. |
+| `task-list-not-approved` | The task's list isn't approved. | Review it and run `/speckled:approve TASKS-F07`. |
+| `dependency-not-done` | A task this one depends on isn't done. | Finish and approve that task first. |
+| `dependency-missing` | A `Depends on` entry isn't in any task list. | Fix the `Depends on` line. |
+| `protected-path` | The agent tried to change the gate's own controls (`speckled.yaml`, `.speckled/`, git hooks, settings, the plugin). | Make the change yourself. |
+| `hooks-disabled-session` | The agent tried to start a session with hooks off. | Run it yourself if you meant to. |
+| `git-commit`, `git-push`, `pull-request` | Agents don't commit, push or open PRs. | Review the diff and commit yourself. |
+| `wrong-start-folder` | The session started in a code repo. | Restart from the planning repo; the message prints the command. |
+| `config-unreadable` | `speckled.yaml` or a task list can't be read. | Fix the file the message names. |
+
+`speckled-gate status` (in the plugin's `bin/`) shows what the gate sees: the mode, the active task and whether it's valid. To relax the gate, set `enforcement: warn` in `speckled.yaml`, or `enforcement: off` to switch it off. Edit the file yourself: agents can't change it while enforcement is on.
+
 **Out-of-date warnings.** A parent document changed after this one was drafted from it. Check whether the change affects this document; revise it if so, and approve again.
 
 ## Limitations
 
-Speckled is early (v0.1). In particular:
+Speckled is early (v0.2). In particular:
 
-- **Gates are enforced by instructions, not code.** Agents are told to respect them, and `approve` can't be run by the model, but nothing yet blocks a code edit without an approved task. An enforcement hook and a GitHub PR check are planned.
+- **Enforcement is a guardrail, not a security boundary.** With `enforcement` on, the hook checks the agent's file edits, the shell commands it recognises, commits, pushes and pull requests. It doesn't stop a human, or any process outside the agent, from editing files, changing settings or switching the plugin off. Shell commands that write files in ways it doesn't recognise (for example a script that generates code) can get through. A server-side check on pull requests is planned.
+- **Approvals aren't blocked at the hook.** An agent could still write an approval entry into a document. It can't commit it, and the commit-time notice lists every approval in a commit, so review the diff before you commit.
 - **The approver's identity is `git config user.name`**, which anyone can set. Treat approvals as a team record, not a security control, until verified approvals ship.
 - **A change to the PDRD flags every FRD as out of date**, not only the affected ones. Roadmap amendments and per-feature versioning (F37) will fix this.
 - **The templates are part of the plugin.** To customize them today, fork the plugin.
@@ -394,11 +448,16 @@ Speckled is early (v0.1). In particular:
 
 ## What this plugin runs
 
-Speckled is mostly instructions: Markdown agents, skills, templates and protocol files that Claude reads. It runs one piece of code:
+Speckled is mostly instructions: Markdown agents, skills, templates and protocol files that Claude reads. The code it runs is Python 3.9+, uses only the standard library plus a bundled copy of PyYAML, and makes no network calls. All of it runs **locally**:
 
-- **`hooks/guard.py`**, a `PreToolUse` hook that inspects each Bash, PowerShell, Read, Edit, MultiEdit, Write, NotebookEdit, Grep and Glob call **locally** before it runs. It blocks recursive forced deletes (`rm -rf` and equivalents, including through `bash -c`, `xargs` and `find -delete`) and access to secret `.env` files (`.env.example`, `.env.sample`, `.env.template` and `.env.dist` stay allowed). It needs only Python 3.9+, has no dependencies, makes no network calls, and writes no files or logs.
+- **`hooks/guard.py`**, a `PreToolUse` hook that inspects each Bash, PowerShell, Read, Edit, MultiEdit, Write, NotebookEdit, Grep and Glob call **locally** before it runs. It blocks recursive forced deletes (`rm -rf` and equivalents, including through `bash -c`, `xargs` and `find -delete`) and access to secret `.env` files (`.env.example`, `.env.sample`, `.env.template` and `.env.dist` stay allowed). It runs whether or not enforcement is on, and writes no files or logs.
+- **`hooks/gate.py`**, a `PreToolUse` hook that enforces the approval gates (see [Enforcement](#enforcement)). With `enforcement` off or missing it does nothing. It writes:
+  - `.speckled/log.jsonl` in the planning repo: one line per action allowed in `warn` mode, with the time, your `git config user.name`, the tool, the file paths, the task and the rule. Never file contents, commands or email addresses. It's meant to be committed.
+  - `projects.json` in the plugin's data folder (on this machine only): which planning repo each code repo belongs to.
+- **`bin/speckled-gate`**, the command line behind both: `activate` (run by `/speckled:build`) writes the per-developer, git-ignored `.speckled/active-task`; `check` and `status` only read; `install-git-hook` copies the commit-time notice into the planning repo.
+- **`hooks/pre-commit-notice.py`**, the optional commit-time notice, installed as the planning repo's `.git/hooks/pre-commit`. When you commit, it lists the approvals and status changes in the commit. It never blocks a commit. It's never installed over an existing hook; you're shown the line to add instead.
 
-Speckled sends no data anywhere, and doesn't change your Claude Code settings or permissions. The documents it creates are plain Markdown files in your repository.
+Speckled sends no data anywhere, and doesn't change your Claude Code settings or permissions. The documents it creates are plain Markdown files in your planning repository.
 
 ## Acknowledgements
 
@@ -406,7 +465,7 @@ Inspired by the [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD), who
 
 ## Status
 
-Early (v0.1). The plugin is usable today; see [Limitations](#limitations) for what's planned next.
+Early (v0.2). The plugin is usable today; see [Limitations](#limitations) for what's planned next.
 
 ## Contributing
 
