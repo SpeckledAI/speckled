@@ -14,7 +14,8 @@ or not enforcement is on; it never reads speckled.yaml.
 
 Exit code 2 blocks the call and shows the message to the model. Any unexpected
 input fails open (exit 0) so a malformed payload never wedges a session. If the
-tokenizer can't be imported, shell commands are allowed, as before it existed.
+tokenizer can't be imported or fails on a command, a coarse check still blocks
+recursive forced deletes, erring towards blocking; other shell commands are allowed.
 """
 from __future__ import annotations
 
@@ -53,11 +54,30 @@ def glob_targets_secret_env(pattern: str) -> bool:
     return any(part.startswith(".env") and is_secret_env(part) for part in re.split(r"[{},\s]", name))
 
 
+def looks_like_rm_rf(command: str) -> bool:
+    """A coarse check for when the tokenizer can't be used. Errs towards blocking:
+    `git commit -m "rm -rf docs"` is blocked too."""
+    for segment in re.split(r"[;&|()`\n]", command):
+        words = [w.strip("'\"") for w in segment.split()]
+        for i, word in enumerate(words):
+            program, args = word.rsplit("/", 1)[-1], words[i + 1:]
+            if program == "find" and "-delete" in args:
+                return True
+            if program != "rm":
+                continue
+            short = "".join(a[1:] for a in args if a.startswith("-") and not a.startswith("--"))
+            if ("r" in short.lower() or "--recursive" in args) and ("f" in short or "--force" in args):
+                return True
+    return False
+
+
 def check(tool: str, tool_input: dict) -> str | None:
     if tool in ("Bash", "PowerShell"):
-        if shell is None:
-            return None
-        kinds = {a.kind for a in shell.actions(tool_input.get("command", ""))}
+        command = tool_input.get("command", "")
+        try:
+            kinds = {a.kind for a in shell.actions(command)}
+        except Exception:  # no tokenizer, or it failed: still never allow rm -rf
+            return RM_MESSAGE if looks_like_rm_rf(command) else None
         if "rm-recursive-force" in kinds:
             return RM_MESSAGE
         if "reads-secret-env" in kinds:

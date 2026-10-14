@@ -21,10 +21,12 @@ All notable changes to this project are documented here. The format follows [Kee
 - The guard hook uses the shared shell analysis, covers `Grep`, `Glob`, `NotebookEdit` and `PowerShell`, and catches recursive deletes through `bash -c`, `xargs` and `find -delete`. Harmless mentions of `.env`, such as in an `echo`, are no longer blocked. [T-F07-10]
 - Protocol §5 rule 1: agents record approvals and mark work done only when a human runs `/speckled:approve`. Each agent's boundaries say the same. [T-F07-13]
 - The task list template uses the strict `Depends on` and `Status` lines the hook reads. [T-F07-13]
+- The guard and the gate run in one `PreToolUse` hook process, `hooks/pretooluse.py`, the guard first, so each tool call starts Python once. Read, Grep and Glob calls don't load the gate. [T-F07-17]
 
 ### Fixed
 - `.env.dist` is treated as a safe example file everywhere, and the README lists all four safe suffixes. [T-F07-10]
 - A garbled sentence in the dev agent's instructions. [T-F07-13]
+- The guard never allows `rm -rf`: it loads only the shell analysis, so faults elsewhere in the gate can't switch it off, and if the shell analysis itself can't load or fails, a simpler check still blocks recursive forced deletes. [T-F07-17]
 
 ## [0.1.0] - 2026-10-06
 

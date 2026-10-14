@@ -20,7 +20,7 @@ This repo is the **public, Apache-2.0 Claude Code plugin** and nothing else. Spe
 | `templates/` | Markdown document templates; `<!-- guide: -->` comments are instructions to the agent |
 | `protocol/documents.md` | IDs, front matter, status and approval rules, traceability. **The core contract; read it first** |
 | `protocol/authoring.md` | How a document is drafted with the human |
-| `hooks/` | `guard.py` safety hook (blocks `rm -rf` and secret `.env` access) |
+| `hooks/` | `pretooluse.py`, the one registered hook, runs `guard.py` (blocks `rm -rf` and secret `.env` access) and then `gate.py` (approval enforcement); `pre-commit-notice.py` is the optional git hook |
 | `tests/` | Guard hook tests (`python3 -m unittest discover tests`) |
 
 ## Working on this repo

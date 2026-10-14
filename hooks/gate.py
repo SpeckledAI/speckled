@@ -23,7 +23,8 @@ Failing closed: once enforcement is known to be on, an unexpected error blocks t
 call (exit 2) with a message saying how to switch the gate off. Claude Code treats a
 crashed hook as "continue", so failing open would turn every bug into a silent bypass.
 
-Usage (hooks/hooks.json): python3 gate.py --plugin-data "${CLAUDE_PLUGIN_DATA}"
+Usage: hooks/pretooluse.py calls run() after the guard. It still runs on its own:
+    python3 gate.py --plugin-data "${CLAUDE_PLUGIN_DATA}"
 """
 from __future__ import annotations
 
@@ -46,7 +47,11 @@ def main(argv: list[str]) -> int:
             return 0
     except Exception:
         return 0  # a Claude Code problem, not a project state: allow
+    return run(payload, argv)
 
+
+def run(payload: dict, argv: list[str]) -> int:
+    """Decide one tool call; return the exit code. Called by main() and by pretooluse.py."""
     enforcing = False
     try:
         from speckled_gate import log

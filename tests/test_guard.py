@@ -115,8 +115,12 @@ class IndependentOfEnforcement(unittest.TestCase):
                         self.assertEqual(run({**payload, "cwd": tmp}, cwd=tmp), 0)
 
 
-class FailsOpenWithoutLib(unittest.TestCase):
-    """A copy of guard.py with no lib/ beside it: shell commands are allowed, nothing crashes."""
+RM_RF = ["rm -rf build", "sudo rm -Rf /", "rm --recursive --force x", 'bash -c "rm -rf x"',
+         "ls | xargs rm -rf", "npm test && rm -fr /tmp/x", "find . -delete", "echo $(rm -rf x)"]
+
+
+class WithoutLib(unittest.TestCase):
+    """A copy of guard.py with no lib/ beside it: rm -rf is still blocked, nothing crashes."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -128,14 +132,55 @@ class FailsOpenWithoutLib(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def test_shell_commands_allowed(self):
-        for cmd in ["rm -rf build", "cat .env"]:
+    def test_rm_rf_still_blocked(self):
+        for cmd in RM_RF:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(run(bash(cmd), guard=self.guard), 2)
+
+    def test_other_shell_commands_allowed(self):
+        for cmd in ["cat .env", "rm -r dir", "ls -la"]:
             with self.subTest(cmd=cmd):
                 self.assertEqual(run(bash(cmd), guard=self.guard), 0)
 
     def test_path_checks_still_apply(self):
         self.assertEqual(run(file_tool("Read", "/p/.env"), guard=self.guard), 2)
         self.assertEqual(run(tool("Grep", pattern="KEY", path="/p/.env"), guard=self.guard), 2)
+
+
+class BrokenLib(unittest.TestCase):
+    """A copy of the plugin with broken gate code: the guard still never allows rm -rf."""
+
+    def make_copy(self, broken: dict) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        copy = Path(tmp.name)
+        shutil.copytree(GUARD.parent, copy / "hooks", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(GUARD.parents[1] / "lib", copy / "lib", ignore=shutil.ignore_patterns("__pycache__"))
+        for rel, source in broken.items():
+            (copy / "lib" / "speckled_gate" / rel).write_text(source)
+        return copy / "hooks" / "guard.py"
+
+    def test_broken_rules_and_yaml_dont_matter(self):
+        # The guard loads only the tokenizer, so it still analyses commands in full.
+        guard = self.make_copy({"rules.py": "raise RuntimeError('broken')\n",
+                                "project.py": "raise RuntimeError('broken')\n",
+                                "yamlio.py": "raise RuntimeError('broken')\n"})
+        for payload, expected in [*[(p, 2) for p in BLOCKED], *[(p, 0) for p in ALLOWED]]:
+            with self.subTest(payload=payload):
+                self.assertEqual(run(payload, guard=guard), expected)
+
+    def test_tokenizer_that_fails(self):
+        guard = self.make_copy({"shell.py": "def actions(command):\n    raise RuntimeError('broken')\n"})
+        for cmd in RM_RF:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(run(bash(cmd), guard=guard), 2)
+        self.assertEqual(run(bash("ls -la"), guard=guard), 0)
+
+    def test_tokenizer_that_cant_be_imported(self):
+        guard = self.make_copy({"shell.py": "raise ImportError('broken')\n"})
+        for cmd in RM_RF:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(run(bash(cmd), guard=guard), 2)
 
 
 if __name__ == "__main__":

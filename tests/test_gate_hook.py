@@ -180,18 +180,5 @@ class FailsClosed(HookFixture):
                                        env={"SPECKLED_TEST_INTERNAL_ERROR": "1"}), (0, "", ""))
 
 
-class HooksJson(unittest.TestCase):
-    def test_final_shape(self):
-        config = json.loads((ROOT / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"]
-        self.assertEqual(len(config), 2)
-        guard, gate = config
-        self.assertEqual(guard["matcher"], "Bash|PowerShell|Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob")
-        self.assertIn("hooks/guard.py", guard["hooks"][0]["command"])
-        self.assertEqual(gate["matcher"], "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit|mcp__.*")
-        self.assertIn("hooks/gate.py", gate["hooks"][0]["command"])
-        self.assertIn('--plugin-data "${CLAUDE_PLUGIN_DATA}"', gate["hooks"][0]["command"])
-        self.assertEqual(gate["hooks"][0]["timeout"], 10)
-
-
 if __name__ == "__main__":
     unittest.main()

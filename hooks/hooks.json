@@ -2,20 +2,11 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob",
+        "matcher": "Bash|PowerShell|Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob|mcp__.*",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit|mcp__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\" --plugin-data \"${CLAUDE_PLUGIN_DATA}\"",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.py\" --plugin-data \"${CLAUDE_PLUGIN_DATA}\"",
             "timeout": 10
           }
         ]
