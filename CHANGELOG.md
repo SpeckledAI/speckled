@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- The gate's rules now have a kind: hard rules (protected files, sessions without hooks, commit, push, pull request, unreadable config) and task rules. `speckled-gate check` gives `block` for a hard rule in `warn` mode too, and reports each violation's `kind`. Hard rules are checked before the start-folder rule, and their messages no longer suggest `warn`. [T-F07-19]
+
 ## [0.2.0] - 2026-10-12
 
 ### Added

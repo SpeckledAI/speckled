@@ -7,7 +7,8 @@ from pathlib import Path
 
 from speckled_gate.docs import find_task, load_task_lists
 from speckled_gate.project import find_project, load_project
-from speckled_gate.rules import actions_for, decide, message, ready_tasks
+from speckled_gate.rules import (HARD_RULES, OK, Action, Verdict, actions_for, decide, first_to_show, message,
+                                 outcome, ready_tasks)
 
 from .fixtures import make_project
 
@@ -165,7 +166,9 @@ class RuleTable(Fixture):
         project = self.project("T-F01-02")
         project.wrong_start = self.app
         self.assertEqual(self.rule(project, *edit(self.app / "src/x.py")), "wrong-start-folder")
-        self.assertEqual(self.rule(project, *edit(self.plans / "speckled.yaml")), "wrong-start-folder")
+        # Hard rules come first (TDD-F07 D13), so warn mode can't let this through [T-F07-19].
+        self.assertEqual(self.rule(project, *edit(self.plans / "speckled.yaml")), "protected-path")
+        self.assertEqual(self.rule(project, *bash("git commit -m x"), self.app), "git-commit")
         self.assertIsNone(self.rule(project, *edit(self.plans / "docs/frds/F01.md")))
 
     def test_config_unreadable(self):
@@ -190,6 +193,40 @@ class RuleTable(Fixture):
         project = self.project()
         self.assertIsNone(self.rule(project, *edit(self.app / "src/x.py")))
         self.assertIsNone(self.rule(project, *bash("git push")))
+
+    def test_kind_and_outcome_for_every_row(self):
+        """TDD-F07 D12: hard rules block in both modes; task rules warn in warn [T-F07-19]."""
+        for name, active, (tool, tool_input), cwd, expected in self.rows():
+            with self.subTest(name):
+                marker = self.plans / ".speckled" / "active-task"
+                if marker.exists():
+                    marker.unlink()
+                verdicts = self.verdicts(self.project(active), tool, tool_input, cwd)
+                if expected is None:
+                    self.assertEqual((outcome("warn", verdicts), outcome("block", verdicts)), ("ok", "ok"))
+                    continue
+                hard = expected in HARD_RULES
+                self.assertEqual(first_to_show(verdicts).hard, hard)
+                self.assertEqual(outcome("block", verdicts), "block")
+                self.assertEqual(outcome("warn", verdicts), "block" if hard else "warn")
+
+    def test_hard_rules(self):
+        self.assertEqual(HARD_RULES, {"protected-path", "hooks-disabled-session", "git-commit", "git-push",
+                                      "pull-request", "config-unreadable"})
+
+    def test_mixed_violations(self):
+        """A hard violation decides the outcome and the message, wherever it is [T-F07-19]."""
+        project = self.project()
+        task = Verdict("no-active-task", Action("write", str(self.app / "x.py"), "Bash"))
+        hard = Verdict("git-commit", Action("git-commit", None, "Bash"))
+        self.assertEqual(outcome("warn", [task, hard]), "block")
+        self.assertIs(first_to_show([task, hard]), hard)
+        self.assertIs(first_to_show([task, OK]), task)
+        self.assertEqual(outcome("warn", [task, OK]), "warn")
+        self.assertEqual(outcome("warn", [OK]), "ok")
+        shown = message(first_to_show([task, hard]), outcome("warn", [task, hard]), project)
+        self.assertTrue(shown.startswith("speckled: blocked: "))
+        self.assertNotIn("enforcement: warn", shown)
 
     def test_decide_and_message_write_nothing(self):
         before = sorted(p for p in self.tmp.rglob("*"))
@@ -226,18 +263,27 @@ class Messages(Fixture):
         out += [(v, broken) for v in self.verdicts(broken, *edit(app / "x.py"), plans)]
         return out
 
-    def test_every_rule_has_a_three_line_message(self):
+    def test_every_rule_has_a_message(self):
+        """Task rules: three lines. Blocked hard rules: two, never suggesting warn (FR8) [T-F07-19]."""
         seen = set()
         for verdict, project in self.violations():
             seen.add(verdict.rule)
             for mode, first, last in [("block", "speckled: blocked: ", "To bypass, a human can set enforcement: warn"),
                                       ("warn", "speckled (warn): would block: ", "Allowed and logged.")]:
                 with self.subTest(rule=verdict.rule, mode=mode):
-                    lines = message(verdict, mode, project).split("\n")
-                    self.assertEqual(len(lines), 3)
-                    self.assertTrue(lines[0].startswith(first))
+                    if verdict.hard and mode == "warn":
+                        continue  # never shown: outcome() blocks a hard rule in warn mode
+                    text = message(verdict, mode, project)
+                    lines = text.split("\n")
                     self.assertTrue(lines[1].strip())
-                    self.assertTrue(lines[2].startswith(last))
+                    if verdict.hard:
+                        self.assertEqual(len(lines), 2)
+                        self.assertTrue(lines[0].startswith("speckled: blocked: "))
+                        self.assertNotIn("enforcement: warn", text)
+                    else:
+                        self.assertEqual(len(lines), 3)
+                        self.assertTrue(lines[0].startswith(first))
+                        self.assertTrue(lines[2].startswith(last))
         self.assertEqual(seen, {"no-active-task", "task-not-started", "task-done", "dependency-not-done",
                                 "dependency-missing", "task-list-not-approved", "protected-path",
                                 "hooks-disabled-session", "git-commit", "git-push", "pull-request",

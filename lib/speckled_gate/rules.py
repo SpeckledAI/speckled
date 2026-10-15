@@ -11,19 +11,21 @@ What it does:
       tries to switch the gate off.
     - `decide()` judges one action against the project and returns a `Verdict`:
       ok, or a violation naming the rule it breaks.
+    - `outcome()` says what happens to a tool call given its verdicts and the mode:
+      hard rules block in either mode; task rules warn in warn mode (TDD-F07 D12).
     - `message()` turns a violation into the short message the agent and the human
-      see: what's wrong, what to do next, and how a human can bypass it.
+      see: what's wrong, what to do next, and, for a task rule, how a human can bypass it.
 
-The order of checks (TDD-F07 F1 step 6):
-    0. a session started outside the planning repo may not touch governed or protected
-       files (`wrong-start-folder`);
-       a broken speckled.yaml or task list blocks governed and protected files
-       (`config-unreadable`);
+The order of checks (TDD-F07 F1 step 6; hard rules first, D13):
+    0. a broken speckled.yaml blocks governed and protected files (`config-unreadable`);
     a. the gate's own controls are never changed by agents (`protected-path`);
     b. agents don't commit, push, open pull requests or start sessions without hooks;
-    c. files outside the code repos (including the planning docs) are free;
-    d. code in a listed repo needs a valid active task: its list approved, the task
-       In progress or In review, and every task it depends on Done.
+    c. a session started outside the planning repo may not change code
+       (`wrong-start-folder`);
+    d. files outside the code repos (including the planning docs) are free;
+    e. code in a listed repo needs a valid active task: its list approved, the task
+       In progress or In review, and every task it depends on Done. A task list that
+       can't be read gives `config-unreadable`.
 
 `decide()` and `message()` read files but never write them. The only writers are
 `log.append` (the warn log) and `activate()` (the active-task marker).
@@ -74,8 +76,34 @@ class Verdict:
     def ok(self) -> bool:
         return self.rule is None
 
+    @property
+    def hard(self) -> bool:
+        """A hard rule blocks in warn mode too (TDD-F07 D12)."""
+        return self.rule in HARD_RULES
+
 
 OK = Verdict()
+
+# Rules that guard what only humans may do and the gate itself: they block whatever the
+# mode (FRD-F07 FR2). Every other rule is a task rule, which warn mode allows and logs.
+HARD_RULES = frozenset({"protected-path", "hooks-disabled-session", "git-commit", "git-push",
+                        "pull-request", "config-unreadable"})
+
+
+def outcome(mode: str, verdicts: list[Verdict]) -> str:
+    """What happens to a tool call: "ok", "warn" (allowed and logged) or "block" (D12)."""
+    violations = [v for v in verdicts if not v.ok]
+    if not violations:
+        return "ok"
+    if mode == "block" or any(v.hard for v in violations):
+        return "block"
+    return "warn"
+
+
+def first_to_show(verdicts: list[Verdict]) -> Verdict:
+    """The violation whose message is shown: the first hard one, else the first one."""
+    violations = [v for v in verdicts if not v.ok]
+    return next((v for v in violations if v.hard), violations[0])
 
 
 # --- tool call -> actions --------------------------------------------------------------
@@ -141,9 +169,8 @@ def decide(project: Project, action: Action) -> Verdict:
     group = classify(project, action.path) if action.path else None
     touches_controls_or_code = group in ("protected", "governed")
 
-    # 0. Wrong start folder, then a broken config: both block governed and protected files.
-    if project.wrong_start is not None and touches_controls_or_code:
-        return Verdict("wrong-start-folder", action)
+    # Hard rules first (TDD-F07 D13), so warn mode can never let one through.
+    # 0. A broken config blocks governed and protected files.
     if project.config_error and touches_controls_or_code:
         return Verdict("config-unreadable", action, facts={"error": project.config_error})
     # a. The gate's own controls.
@@ -152,10 +179,13 @@ def decide(project: Project, action: Action) -> Verdict:
     # b. Actions that are never the agent's to take.
     if action.kind in _ALWAYS:
         return Verdict(_ALWAYS[action.kind], action)
-    # c. Free files: the planning repo and anything outside the code repos.
+    # c. Wrong start folder: code edits only (protected files got protected-path above).
+    if project.wrong_start is not None and group == "governed":
+        return Verdict("wrong-start-folder", action)
+    # d. Free files: the planning repo and anything outside the code repos.
     if group != "governed":
         return OK
-    # d. Code: needs a valid active task.
+    # e. Code: needs a valid active task.
     return _check_active_task(project, action)
 
 
@@ -309,8 +339,15 @@ def _check_active_task(project: Project, action: Action) -> Verdict:
 # --- messages --------------------------------------------------------------------------
 
 def message(verdict: Verdict, mode: str, project: Project) -> str:
-    """The message for a violation: reason, next step, and the bypass (TDD-F07 §5)."""
+    """The message for a violation: reason, next step, and the bypass (TDD-F07 §5).
+
+    `mode` is what happens to the call: pass `outcome()`, not the project's setting, so
+    a hard rule in warn mode is shown as a block. A blocked hard rule gets two lines:
+    warn mode wouldn't allow it, so the message never suggests it (FRD-F07 FR8).
+    """
     reason, next_step = _explain(verdict, project)
+    if verdict.hard and mode == "block":
+        return "\n".join([f"speckled: blocked: {reason}", next_step])
     if mode == "warn":
         return "\n".join([f"speckled (warn): would block: {reason}", next_step, "Allowed and logged."])
     return "\n".join([f"speckled: blocked: {reason}", next_step,

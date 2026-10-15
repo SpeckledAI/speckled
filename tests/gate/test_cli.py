@@ -8,7 +8,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from speckled_gate.cli import USAGE_ERROR, main
-from speckled_gate.rules import actions_for, decide
+from speckled_gate.rules import HARD_RULES, actions_for, decide
 
 # Imported as a module so unittest doesn't collect (and re-run) its test classes here.
 from . import test_rules
@@ -52,8 +52,30 @@ class Check(CliFixture):
                 result = self.check(tool, tool_input, cwd)
                 self.assertEqual([v["rule"] for v in result["violations"]], broken)
                 self.assertEqual(result["decision"], "block" if expected else "ok")
+                self.assertEqual([v["kind"] for v in result["violations"]],
+                                 ["hard" if r in HARD_RULES else "task" for r in broken])
                 if expected:
                     self.assertEqual(result["violations"][0]["rule"], expected)
+
+    def test_warn_mode_decision_for_every_rule_row(self):
+        """In warn mode, hard rules still give block; task rules give warn [T-F07-19]."""
+        (self.plans / "speckled.yaml").write_text(test_rules.CONFIG.replace("block", "warn"))
+        for name, active, (tool, tool_input), cwd, expected in test_rules.RuleTable.rows(self):
+            with self.subTest(name):
+                marker = self.plans / ".speckled" / "active-task"
+                if marker.exists():
+                    marker.unlink()
+                self.project(active)
+                result = self.check(tool, tool_input, cwd)
+                if expected is None:
+                    self.assertEqual(result["decision"], "ok")
+                elif expected in HARD_RULES:
+                    self.assertEqual(result["decision"], "block")
+                    self.assertNotIn("enforcement: warn", result["violations"][0]["message"])
+                else:
+                    self.assertEqual(result["decision"], "warn")
+                    self.assertTrue(result["violations"][0]["message"].endswith("Allowed and logged."))
+        self.assertFalse((self.plans / ".speckled" / "log.jsonl").exists())
 
     def test_violation_fields_are_relative(self):
         result = self.check("Edit", {"file_path": str(self.app / "src" / "x.py")}, self.plans)

@@ -16,7 +16,7 @@ GATE = ROOT / "hooks" / "gate.py"
 sys.path.insert(0, str(ROOT / "lib"))
 
 from speckled_gate.project import load_project  # noqa: E402
-from speckled_gate.rules import actions_for, decide  # noqa: E402
+from speckled_gate.rules import HARD_RULES, actions_for, decide  # noqa: E402
 
 from gate import test_rules  # noqa: E402  (imported as a module: its tests aren't re-collected)
 from gate.fixtures import make_project  # noqa: E402
@@ -74,7 +74,8 @@ class BlockMode(HookFixture):
                 if expected:
                     self.assertEqual(code, 2)
                     self.assertTrue(stderr.startswith("speckled: blocked: "), stderr)
-                    self.assertEqual(len(stderr.strip().split("\n")), 3)
+                    # Hard rules: two lines, no warn bypass (FR8) [T-F07-19].
+                    self.assertEqual(len(stderr.strip().split("\n")), 2 if expected in HARD_RULES else 3)
                 else:
                     self.assertEqual((code, stdout, stderr), (0, "", ""))
         self.assertEqual(self.log_lines(), [])  # block mode never logs
