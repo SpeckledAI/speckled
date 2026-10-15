@@ -92,8 +92,8 @@ enforcement_exempt:         # optional; patterns relative to each code repo's ro
 ```
 
 - `off`: nothing is checked.
-- `warn`: an action that breaks a rule goes ahead; the agent is told, and the action is logged.
-- `block`: an action that breaks a rule is stopped, with a message saying what to do next.
+- `warn`: an action that breaks a **task rule** goes ahead; the agent is told, and the action is logged. An action that breaks a **hard rule** is still stopped and logged.
+- `block`: an action that breaks any rule is stopped and logged, with a message saying what to do next.
 - An unrecognised value counts as `block`.
 - `enforcement_exempt` patterns use Python `fnmatch` on the file's path relative to its code repo, with forward slashes. `*` also matches `/`, so `docs/*` covers every file under `docs/`. Files that match are free to change without an active task. The default is no exemptions.
 
@@ -111,21 +111,23 @@ Agents never commit, push or open pull requests, whatever the files.
 
 ### Rules
 
-Every block or warning names one rule:
+Every block or warning names one rule. **Hard** rules guard what only humans may do and the gate itself: they block in `warn` as well as `block`, and their message never suggests `warn`. **Task** rules guard agent code changes: `warn` lets them through and logs them, `block` stops them.
 
-| Rule | Meaning |
-|---|---|
-| `wrong-start-folder` | The session started in a code repo instead of the planning repo. |
-| `config-unreadable` | `speckled.yaml` or a task list can't be read. Code and protected files are blocked until a human fixes it. |
-| `protected-path` | The action would change one of the gate's controls. |
-| `hooks-disabled-session` | The action would start a Claude Code session with hooks switched off. |
-| `git-commit`, `git-push`, `pull-request` | Agents don't commit, push or open pull requests. |
-| `no-active-task` | No task is active, or the active task isn't in any task list. |
-| `task-list-not-approved` | The active task's list isn't `approved`. |
-| `task-not-started` | The active task is `Todo`. |
-| `task-done` | The active task is `Done`. |
-| `dependency-not-done` | A task the active task depends on isn't `Done`. |
-| `dependency-missing` | A task the active task depends on isn't in any task list. |
+| Rule | Kind | Meaning |
+|---|---|---|
+| `config-unreadable` | hard | `speckled.yaml` or a task list can't be read. Code and protected files are blocked until a human fixes it. |
+| `protected-path` | hard | The action would change one of the gate's controls. |
+| `hooks-disabled-session` | hard | The action would start a Claude Code session with hooks switched off. |
+| `git-commit`, `git-push`, `pull-request` | hard | Agents don't commit, push or open pull requests. |
+| `wrong-start-folder` | task | The session started in a code repo instead of the planning repo, and the action changes code. |
+| `no-active-task` | task | No task is active, or the active task isn't in any task list. |
+| `task-list-not-approved` | task | The active task's list isn't `approved`. |
+| `task-not-started` | task | The active task is `Todo`. |
+| `task-done` | task | The active task is `Done`. |
+| `dependency-not-done` | task | A task the active task depends on isn't `Done`. |
+| `dependency-missing` | task | A task the active task depends on isn't in any task list. |
+
+The safety guard's blocks also appear in the log, when enforcement is on, as `recursive-delete` (a recursive forced delete) and `secret-env-file` (access to a secret `.env` file). The guard blocks these whatever the mode, and with enforcement off too.
 
 ### `.speckled/` in the planning repo
 
@@ -133,7 +135,7 @@ Every block or warning names one rule:
 |---|---|---|
 | `.gitignore` | Yes | `active-task` and `*.tmp`. |
 | `active-task` | No (per developer) | `{"v": 1, "task": "T-F07-03", "activated_at": "<UTC time>", "by": "<git user.name>", "files": ["tasks/F07-<slug>.md"]}`. Written only by `speckled-gate activate`, which `/speckled:build` runs. `files` lists the task lists (relative to `docs_dir`) that hold the task and its dependencies, so each check reads only those. It's a hint: if those files no longer hold the task or a dependency, every task list is read instead, and a marker without `files` works the same way. |
-| `log.jsonl` | Yes | The enforcement log, one JSON object per line. Append-only. |
+| `log.jsonl` | Yes | The enforcement log, one JSON object per line: every action allowed in `warn` mode and every block. Append-only. |
 
 ### Log format, version 1
 
@@ -141,11 +143,15 @@ Every block or warning names one rule:
 {"v": 1, "ts": "2026-10-08T14:03:11Z", "mode": "warn", "by": "alice",
  "tool": "Edit", "repo": "../app", "paths": ["src/main.py"],
  "task": "T-F07-03", "rule": "task-done", "agent": "main"}
+{"v": 1, "ts": "2026-10-15T09:12:40Z", "mode": "block", "by": "alice",
+ "tool": "Bash", "repo": "", "paths": [],
+ "task": "T-F07-03", "rule": "git-commit", "agent": "main"}
 ```
 
-- `v`: the format version. `ts`: UTC time. `mode`: the enforcement mode. `by`: `git config user.name`.
+- `v`: the format version. `ts`: UTC time. `mode`: the outcome, `warn` (allowed and logged) or `block` (stopped). `by`: `git config user.name`.
 - `tool`: the tool the agent used. `repo`: the code repo as written in `repos`. `paths`: the files, relative to `repo`.
-- `task`: the active task, or `null`. `rule`: one of the rules above. `agent`: `main`, or the subagent's type.
+- `task`: the active task, or `null`. `rule`: one of the rules above, or one of the guard's. `agent`: `main`, or the subagent's type.
+- Actions without file paths (commits, pushes, pull requests, the guard's shell blocks) have `repo: ""` and `paths: []`.
 - Never logged: file contents, command text, email addresses or absolute paths.
 - Adding a field or a rule value is a compatible change. Renaming or removing a field bumps `v`.
 

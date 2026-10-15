@@ -136,7 +136,7 @@ Declare the rules your product must never break in `speckled.yaml` (for example,
 
 #### `/speckled:init`
 Sets up Speckled in a project.
-- Asks for: project name, planning repo path (default `../<project>-plans`), docs directory (default `docs`), code repos, constraints, approvers per gate, and the enforcement mode (`off`, `warn` or `block`; it suggests `warn` for an existing codebase).
+- Asks for: project name, planning repo path (default `../<project>-plans`), docs directory (default `docs`), code repos, constraints, approvers per gate, and the enforcement mode (`off`, `warn` or `block`; it suggests `warn`).
 - Creates the planning repo with `git init`, writes `speckled.yaml` there (`repos` lists code repos only), and creates `<docs>/research`, `frds`, `tdds` and `tasks`. Never overwrites existing files.
 - With enforcement on, installs the commit-time notice in the planning repo (`speckled-gate install-git-hook`).
 - On an existing codebase, offers to run `/speckled:map` and summarizes any existing docs it finds.
@@ -305,14 +305,16 @@ cd ~/code/acme-plans && claude --add-dir ../acme-web --add-dir ../acme-api
 `enforcement` decides whether the approval gates are also checked in code, by a hook that runs before each tool call:
 
 - **`off`** (or missing): nothing is checked. Gates are followed through the agents' instructions only.
-- **`warn`**: an agent action that breaks a rule goes ahead, but the agent is told and the action is logged in `.speckled/log.jsonl`. Good for trying Speckled on an existing codebase.
-- **`block`**: an action that breaks a rule is stopped, with a message saying what to do next.
+- **`warn`** (what `/speckled:init` suggests): agents work freely. A code change outside an approved task goes ahead, but the agent is told and the change is logged in `.speckled/log.jsonl`.
+- **`block`**: the same, but agent code changes outside an approved task are also stopped, with a message saying what to do next.
 
-With enforcement on:
-- Changing code in a listed repo needs an **active task** (set by `/speckled:build`): its task list approved, the task `In progress` or `In review`, and every task it depends on done.
+With enforcement on, in either mode:
 - Agents can't change the gate's own controls: `speckled.yaml`, `.speckled/`, git hooks, Claude Code settings files, or the plugin.
 - Agents can't commit, push or open pull requests.
-- Planning documents stay free to edit.
+- Every block is logged in `.speckled/log.jsonl`.
+- Planning documents stay free to edit, and your own edits are never checked.
+
+In `block` mode, changing code in a listed repo also needs an **active task** (set by `/speckled:build`): its task list approved, the task `In progress` or `In review`, and every task it depends on done.
 
 `enforcement_exempt` lists patterns (Python `fnmatch`, where `*` also matches `/`) for code-repo files any task may change. Only you can change these settings: agents can't edit `speckled.yaml` while enforcement is on. The full rules are in [`protocol/documents.md` §8](protocol/documents.md).
 
@@ -415,7 +417,7 @@ Each entry records who approved which version. When an approved document is edit
 
 **A command was blocked by `speckled guard`.** The safety hook blocks recursive forced deletes (`rm -rf`) and access to secret `.env` files. Delete specific paths instead, or run the command yourself in your terminal.
 
-**A change was blocked (or warned about) by `speckled`.** With enforcement on, each message names what's wrong and the next step. Messages start with `speckled: blocked:` in `block` mode, or `speckled (warn): would block:` in `warn` mode, where the action still goes ahead and is logged. By rule:
+**A change was blocked (or warned about) by `speckled`.** With enforcement on, each message names what's wrong and the next step. Blocks start with `speckled: blocked:`. In `warn` mode, a code change outside an approved task starts with `speckled (warn): would block:` and still goes ahead. The gate's own controls, commits, pushes, pull requests and an unreadable config are blocked in both modes, and their message doesn't suggest `warn`, which wouldn't help. Every block and warning is logged. By rule:
 
 | Rule | What it means | What to do |
 |---|---|---|
@@ -437,7 +439,7 @@ Each entry records who approved which version. When an approved document is edit
 
 ## Limitations
 
-Speckled is early (v0.2). In particular:
+Speckled is early (v0.3). In particular:
 
 - **Enforcement is a guardrail, not a security boundary.** With `enforcement` on, the hook checks the agent's file edits, the shell commands it recognises, commits, pushes and pull requests. It doesn't stop a human, or any process outside the agent, from editing files, changing settings or switching the plugin off. Shell commands that write files in ways it doesn't recognise (for example a script that generates code) can get through. A server-side check on pull requests is planned.
 - **Approvals aren't blocked at the hook.** An agent could still write an approval entry into a document. It can't commit it, and the commit-time notice lists every approval in a commit, so review the diff before you commit.
@@ -451,9 +453,9 @@ Speckled is early (v0.2). In particular:
 Speckled is mostly instructions: Markdown agents, skills, templates and protocol files that Claude reads. The code it runs is Python 3.9+, uses only the standard library plus a bundled copy of PyYAML, and makes no network calls. All of it runs **locally**:
 
 - **`hooks/pretooluse.py`**, the one `PreToolUse` hook. It runs both checks below in a single process before each Bash, PowerShell, Read, Edit, MultiEdit, Write, NotebookEdit, Grep, Glob and MCP tool call: the guard first, then, if the guard allows the call and it can change something, the gate.
-- **`hooks/guard.py`**, the safety guard. It blocks recursive forced deletes (`rm -rf` and equivalents, including through `bash -c`, `xargs` and `find -delete`) and access to secret `.env` files (`.env.example`, `.env.sample`, `.env.template` and `.env.dist` stay allowed). It runs whether or not enforcement is on, and writes no files or logs.
+- **`hooks/guard.py`**, the safety guard. It blocks recursive forced deletes (`rm -rf` and equivalents, including through `bash -c`, `xargs` and `find -delete`) and access to secret `.env` files (`.env.example`, `.env.sample`, `.env.template` and `.env.dist` stay allowed). It runs whether or not enforcement is on. With enforcement on, it records each block in the gate's log below (as `recursive-delete` or `secret-env-file`, never with the command text); otherwise it writes nothing.
 - **`hooks/gate.py`**, the gate, which enforces the approvals (see [Enforcement](#enforcement)). It doesn't run for Read, Grep and Glob. With `enforcement` off or missing it does nothing. It writes:
-  - `.speckled/log.jsonl` in the planning repo: one line per action allowed in `warn` mode, with the time, your `git config user.name`, the tool, the file paths, the task and the rule. Never file contents, commands or email addresses. It's meant to be committed.
+  - `.speckled/log.jsonl` in the planning repo: one line per action allowed in `warn` mode and per block, in either mode, with the outcome, the time, your `git config user.name`, the tool, the file paths, the task and the rule. Never file contents, commands or email addresses. It's meant to be committed.
   - `projects.json` in the plugin's data folder (on this machine only): which planning repo each code repo belongs to.
 - **`bin/speckled-gate`**, the gate's command line: `activate` (run by `/speckled:build`) writes the per-developer, git-ignored `.speckled/active-task`; `check` and `status` only read; `install-git-hook` copies the commit-time notice into the planning repo.
 - **`hooks/pre-commit-notice.py`**, the optional commit-time notice, installed as the planning repo's `.git/hooks/pre-commit`. When you commit, it lists the approvals and status changes in the commit. It never blocks a commit. It's never installed over an existing hook; you're shown the line to add instead.
@@ -466,7 +468,7 @@ Inspired by the [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD), who
 
 ## Status
 
-Early (v0.2). The plugin is usable today; see [Limitations](#limitations) for what's planned next.
+Early (v0.3). The plugin is usable today; see [Limitations](#limitations) for what's planned next.
 
 ## Contributing
 
