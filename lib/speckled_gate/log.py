@@ -1,9 +1,11 @@
-"""The enforcement log: a committed, append-only record of warn-mode events.
+"""The enforcement log: a committed, append-only record of warn-mode events and blocks.
 
 Why this module exists:
-    In warn mode the gate lets an action through that it would otherwise block. The
-    team, and later the traceability linter, need to see every such action, so each
-    one is appended to `.speckled/log.jsonl` in the planning repo, which is committed.
+    In warn mode the gate lets a task-rule action through that block mode would stop;
+    and in either mode it blocks some actions outright. The team, and later the
+    traceability linter, need to see both, so each one is appended to
+    `.speckled/log.jsonl` in the planning repo, which is committed. An entry's `mode` is
+    the outcome: `warn` (allowed and logged) or `block` (refused) (TDD-F07 D14).
 
 What it does:
     - `entry()` builds one log entry in format version 1 (documented in the protocol):

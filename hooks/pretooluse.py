@@ -8,9 +8,11 @@ Why this file exists:
 
 What it does, per tool call:
     1. Reads the hook payload (JSON on stdin). Unreadable payload: allow (exit 0).
-    2. Runs guard.check(). If it blocks, prints its message on stderr and exits 2,
-       whatever the enforcement mode, so a guard-blocked call is never logged as a warn
-       event. Any error in the guard means no verdict, as in guard.py.
+    2. Runs guard.check(). If it blocks, asks the gate to log the block (only in a
+       Speckled project with enforcement on, as `recursive-delete` or `secret-env-file`),
+       then prints its message on stderr and exits 2, whatever the enforcement mode and
+       whether or not logging worked. Any error in the guard means no verdict, as in
+       guard.py.
     3. Read, Grep and Glob can't change anything: allow without loading the gate.
     4. Otherwise imports the gate and returns gate.run(). If the gate can't be imported,
        enforcement is unknown: allow, as when lib/ is missing. Once the gate runs, its
@@ -47,6 +49,7 @@ def main(argv: list[str]) -> int:
     except Exception:
         reason = None
     if reason:
+        _log_guard_block(payload, reason, argv)
         print(f"speckled guard: {reason}", file=sys.stderr)
         return 2
 
@@ -57,6 +60,18 @@ def main(argv: list[str]) -> int:
     except Exception:
         return 0
     return gate.run(payload, argv)
+
+
+def _log_guard_block(payload: dict, reason: str, argv: list[str]) -> None:
+    """Ask the gate to log the guard's block (TDD-F07 D14). The block stands whatever happens."""
+    try:
+        import guard
+        rule = {guard.RM_MESSAGE: "recursive-delete", guard.ENV_MESSAGE: "secret-env-file"}.get(reason)
+        if rule:
+            import gate
+            gate.log_guard_block(payload, rule, argv)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

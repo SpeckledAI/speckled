@@ -39,6 +39,12 @@ class Log(unittest.TestCase):
                           "no-active-task", "Explore"))
         self.assertRegex(e["ts"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
+    def test_block_entry_has_exactly_the_v1_fields(self):
+        """A block is logged in the same format, with `mode: block` (TDD-F07 D14) [T-F07-20]."""
+        e = self.entry([], mode="block", rule="git-commit", task="T-F01-02")
+        self.assertEqual(set(e), V1_FIELDS)
+        self.assertEqual((e["v"], e["mode"], e["repo"], e["paths"], e["rule"]), (1, "block", "", [], "git-commit"))
+
     def test_no_absolute_paths_or_command_text(self):
         command = "sed -i 's/password=hunter2/x/' src/x.py"
         home = self.tmp / "home"

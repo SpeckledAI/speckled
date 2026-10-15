@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 - The gate's rules now have a kind: hard rules (protected files, sessions without hooks, commit, push, pull request, unreadable config) and task rules. `speckled-gate check` gives `block` for a hard rule in `warn` mode too, and reports each violation's `kind`. Hard rules are checked before the start-folder rule, and their messages no longer suggest `warn`. [T-F07-19]
+- The hook acts on the rule kind: in `warn` mode, agents can no longer commit, push, open pull requests or change the gate's settings. Every block is now logged in `.speckled/log.jsonl` with `mode: block`, including the safety guard's blocks when enforcement is on; a block stands even if the log can't be written. [T-F07-20]
 
 ## [0.2.0] - 2026-10-12
 
