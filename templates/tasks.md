@@ -22,8 +22,9 @@ approvals: []
 - **Owner:** agent | human (<name>)
 - **Repo / area:** <!-- guide: repository and the main paths it touches -->
 - **Implements:** <!-- guide: TDD sections and FRD requirements, e.g. TDD-F07 §3, FRD-F07/FR2 -->
-- **Depends on:** <!-- guide: earlier task IDs only -->
+- **Depends on:** <!-- guide: earlier task IDs, comma-separated, or "none" -->
 - **Status:** Todo
+<!-- guide: Keep the "Depends on" and "Status" lines exactly in this shape: the enforcement hook reads them (protocol §8). Status is exactly Todo, In progress, In review or Done. -->
 
 **Context**
 <!-- guide: What the implementer needs to know: current code, patterns to follow, gotchas. -->

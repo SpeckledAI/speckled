@@ -13,7 +13,7 @@ Paths in this skill are relative to its base directory. The Speckled root is `..
 **Protocol:** follow `../../protocol/authoring.md` and `../../protocol/documents.md`.
 **Parent:** `PDRD` (must be approved).
 
-1. Feature: $ARGUMENTS. If none was given, list the PDRD features that don't have an FRD yet, in phase order, and ask which one.
+1. Feature: $ARGUMENTS. Accept a feature ID (`F07`) or any of its document IDs (`FRD-F07`, `TDD-F07`, `TASKS-F07`), and use the feature number. If none was given, list the PDRD features that don't have an FRD yet, in phase order, and ask which one.
 2. Check that the features it depends on are done or already have approved FRDs. If they aren't, point that out.
 3. Read the PDRD entry, the brief, `ARCH` if it exists, and the FRDs of related features.
 4. Ask the human to clarify anything ambiguous before drafting.

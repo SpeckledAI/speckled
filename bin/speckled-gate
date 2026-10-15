@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""speckled-gate: the command line for Speckled's approval gate.
+
+Run `speckled-gate --help`. This file only finds the plugin's `lib/` folder and hands
+over to `speckled_gate.cli`; the logic lives there.
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from speckled_gate.cli import main  # noqa: E402
+
+sys.exit(main())

@@ -16,20 +16,39 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Pinned so a new CLI release can't break `validate` without a change in this repo.
+      # To bump: install the new version locally, run `claude plugin validate --strict .`,
+      # check the hooks still behave (tests/test_gate_hook.py), then change the version
+      # here in its own commit.
       - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+        run: npm install -g @anthropic-ai/claude-code@2.1.293
       - name: Validate plugin and marketplace (strict)
         run: claude plugin validate --strict .
 
-  guard-tests:
-    runs-on: ubuntu-latest
+  tests:
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python: ["3.9", "3.13"]
+    env:
+      SPECKLED_PERF: "1"  # enables tests/gate/test_performance.py (p95 <= 100 ms)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Run guard hook tests
+      - name: Run tests
         run: python -m unittest discover tests -v
+      # macOS's own python3 (Xcode's 3.9) starts much slower than a separately installed
+      # Python, and it's what many users have. Report its timing without failing the build.
+      - name: Time the gate hook with the system python3 (report only)
+        if: runner.os == 'macOS' && matrix.python == '3.13'
+        continue-on-error: true
+        env:
+          SPECKLED_PERF_PYTHON: /usr/bin/python3
+          SPECKLED_PERF_REPORT_ONLY: "1"
+        run: |
+          /usr/bin/python3 --version
+          python -m unittest tests.gate.test_performance -v

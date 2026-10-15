@@ -13,7 +13,7 @@ Paths in this skill are relative to its base directory. The Speckled root is `..
 **Protocol:** follow `../../protocol/authoring.md` and `../../protocol/documents.md`.
 **Parent:** `TDD-F<nn>` (must be approved).
 
-1. Feature: $ARGUMENTS. If none was given, list the approved TDDs that don't have a task list yet, and ask which one.
+1. Feature: $ARGUMENTS. Accept a feature ID (`F07`) or any of its document IDs (`FRD-F07`, `TDD-F07`, `TASKS-F07`), and use the feature number. If none was given, list the approved TDDs that don't have a task list yet, and ask which one.
 2. Read the TDD, its FRD, `ARCH`, and the code in the affected repos.
 3. Ask the human to clarify anything ambiguous in the TDD.
 4. Draft the tasks: in dependency order, one concern each, backend, frontend and integration kept separate, work only a human can do assigned to a human, and every TDD section covered.
