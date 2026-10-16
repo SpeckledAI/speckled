@@ -37,7 +37,7 @@ from pathlib import Path
 from .docs import find_task, load_task_lists
 from .log import LOG, display_path, git_user
 from .project import Project, find_project, load_project, registry_path
-from .rules import actions_for, activate, active_marker, decide, message, validate_task
+from .rules import actions_for, activate, active_marker, decide, message, outcome, validate_task
 
 USAGE_ERROR = 64
 NOTICE_MARKER = "# speckled pre-commit notice v1"
@@ -105,15 +105,17 @@ def _check(args) -> int:
     project = _project(args)
     result = {"decision": "ok", "violations": []}
     if project is not None and project.enforcement != "off":
-        for action in actions_for(args.tool, tool_input, project, args.cwd):
-            verdict = decide(project, action)
+        verdicts = [decide(project, a) for a in actions_for(args.tool, tool_input, project, args.cwd)]
+        # The same outcome the hook acts on (TDD-F07 D12): hard rules block in warn mode too.
+        result["decision"] = outcome(project.enforcement, verdicts)
+        for verdict in verdicts:
             if verdict.ok:
                 continue
-            repo, path = display_path(project, action.path) if action.path else ("", "")
-            result["violations"].append({"rule": verdict.rule, "repo": repo, "path": path,
-                                         "message": message(verdict, project.enforcement, project)})
-        if result["violations"]:
-            result["decision"] = project.enforcement
+            action = verdict.action
+            repo, path = display_path(project, action.path) if action and action.path else ("", "")
+            result["violations"].append({"rule": verdict.rule, "kind": "hard" if verdict.hard else "task",
+                                         "repo": repo, "path": path,
+                                         "message": message(verdict, result["decision"], project)})
     print(json.dumps(result, indent=2))
     return 0
 

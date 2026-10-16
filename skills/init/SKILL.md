@@ -18,12 +18,12 @@ Paths in this skill are relative to its base directory. The Speckled root is `..
    4. Code repositories this project spans (default: the current repo). Write each as a path relative to the planning repo, for example `../app`. Multi-repo projects list each one.
    5. Firm constraints: rules the product and the AI must never break (e.g. "every trade requires user approval", "no PII in logs"). It's fine to start with none.
    6. Who approves each gate: `brief`, `pdrd`, `frd`, `tdd`, `tasks`, `code`. A solo developer can put themselves on all of them.
-   7. Enforcement mode, which controls whether code changes need an approved, active task:
+   7. Enforcement mode, which controls how the agent's work is checked:
       - `off`: nothing is checked; the workflow is guidance only.
-      - `warn`: changes that break a rule go ahead, but the agent is told and the change is logged.
-      - `block`: changes that break a rule are stopped until there's an approved task to work on.
+      - `warn`: agents work freely. Code changes outside an approved task go ahead, but the agent is told and the change is logged. Agents still can't commit, push, open pull requests or change the gate's settings.
+      - `block`: the same as `warn`, and also refuses agent code changes outside an approved, active task.
 
-      Suggest `warn` if any code repo already contains code, `block` once the project has an approved task list, and `off` otherwise.
+      Suggest `warn` for every project. `block` is for teams that want agents to change code only for an approved task; it's their choice, not the default.
 4. Create the planning repo folder if it's new and run `git init` in it. Write `speckled.yaml` at its root, with the chosen enforcement mode:
    ```yaml
    project: <name>

@@ -16,7 +16,7 @@ GATE = ROOT / "hooks" / "gate.py"
 sys.path.insert(0, str(ROOT / "lib"))
 
 from speckled_gate.project import load_project  # noqa: E402
-from speckled_gate.rules import actions_for, decide  # noqa: E402
+from speckled_gate.rules import HARD_RULES, actions_for, decide  # noqa: E402
 
 from gate import test_rules  # noqa: E402  (imported as a module: its tests aren't re-collected)
 from gate.fixtures import make_project  # noqa: E402
@@ -70,14 +70,41 @@ class BlockMode(HookFixture):
         for name, active, tool, tool_input, expected in rows:
             with self.subTest(name):
                 self.set_active(active)
+                project = load_project(self.plans, self.plugin, self.data, self.home)
+                broken = [v for v in (decide(project, a) for a in
+                                      actions_for(tool, tool_input, project, str(self.plans))) if not v.ok]
+                before = len(self.log_lines())
                 code, stdout, stderr = self.run_hook(self.payload(tool, tool_input, self.plans))
+                new = [json.loads(line) for line in self.log_lines()[before:]]
                 if expected:
                     self.assertEqual(code, 2)
                     self.assertTrue(stderr.startswith("speckled: blocked: "), stderr)
-                    self.assertEqual(len(stderr.strip().split("\n")), 3)
+                    # Hard rules: two lines, no warn bypass (FR8) [T-F07-19].
+                    self.assertEqual(len(stderr.strip().split("\n")), 2 if expected in HARD_RULES else 3)
+                    # Every block is logged, one entry per violation (TDD-F07 D14) [T-F07-20].
+                    self.assertEqual([(e["mode"], e["rule"]) for e in new], [("block", v.rule) for v in broken])
                 else:
                     self.assertEqual((code, stdout, stderr), (0, "", ""))
-        self.assertEqual(self.log_lines(), [])  # block mode never logs
+                    self.assertEqual(new, [])
+
+    def test_unwritable_log_still_blocks(self):
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root ignores permissions")
+        (self.plans / ".speckled").mkdir(exist_ok=True)
+        os.chmod(self.plans / ".speckled", 0o500)
+        try:
+            code, _, stderr = self.run_hook(self.payload("Edit", {"file_path": str(self.app / "x.py")}, self.plans))
+        finally:
+            os.chmod(self.plans / ".speckled", 0o700)
+        self.assertEqual(code, 2)
+        self.assertIn("(not logged:", stderr)
+
+    def test_hard_rule_entry_names_the_active_task(self):
+        self.set_active("T-F01-02")
+        self.run_hook(self.payload("Bash", {"command": f"cd {self.app} && git commit -m x"}, self.plans))
+        entry = json.loads(self.log_lines()[-1])
+        self.assertEqual((entry["mode"], entry["rule"], entry["task"], entry["paths"]),
+                         ("block", "git-commit", "T-F01-02", []))
 
 
 class WarnMode(HookFixture):
@@ -95,6 +122,14 @@ class WarnMode(HookFixture):
                                       actions_for(tool, tool_input, project, str(self.plans))) if not v.ok]
                 before = len(self.log_lines())
                 code, stdout, stderr = self.run_hook(self.payload(tool, tool_input, self.plans))
+                if expected in HARD_RULES:
+                    # Hard rules block in warn mode too, and are logged as blocks (FR2) [T-F07-20].
+                    self.assertEqual((code, stdout), (2, ""))
+                    self.assertTrue(stderr.startswith("speckled: blocked: "), stderr)
+                    self.assertNotIn("warn", stderr)
+                    new = [json.loads(line) for line in self.log_lines()[before:]]
+                    self.assertEqual([(e["mode"], e["rule"]) for e in new], [("block", v.rule) for v in broken])
+                    continue
                 self.assertEqual((code, stderr), (0, ""))
                 if expected:
                     out = json.loads(stdout)
