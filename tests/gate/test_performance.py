@@ -7,7 +7,7 @@ Runs the hook as Claude Code does, a new process per tool call, against a projec
 The budget is measured in rounds of 100 runs. If a round's p95 is over budget, the test
 measures again, up to three rounds, and fails only if every round is over: shared CI
 runners have bursts of slowness unrelated to the hook, and a real slowdown raises every
-round (TDD-F07 R11).
+round.
 
 Skipped unless SPECKLED_PERF=1 (CI sets it), so local test runs stay fast. Options:
     SPECKLED_PERF_PYTHON=/usr/bin/python3   time the hook under another interpreter
@@ -93,7 +93,7 @@ class GateHookBudget(unittest.TestCase):
                              code_repos=["app"], files=files)
         self.plans, self.data = paths.root, tmp / "plugin-data"
         (self.plans / ".speckled").mkdir()
-        # As `activate` writes it: the task and the list holding it and its dependencies (D5).
+        # As `activate` writes it: the task and the list holding it and its dependencies.
         (self.plans / ".speckled" / "active-task").write_text(json.dumps({
             "v": 1, "task": f"T-F{LISTS:02d}-{TASKS_PER_LIST:02d}", "files": [f"tasks/F{LISTS:02d}.md"]}))
         self.edit, self.read = (json.dumps({

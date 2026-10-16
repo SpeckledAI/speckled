@@ -7,7 +7,7 @@ Brief → PDRD → FRD → TDD → Tasks → Code, with a human approval at ever
 
 This repo is the **public, Apache-2.0 Claude Code plugin** and nothing else. Speckled is developed with Speckled, but its planning (brief, PDRD, FRDs, TDDs, task lists, `speckled.yaml`) lives in the private sibling repo `../speckled-hq`. Sessions usually run from there, with this repo listed under `repos`.
 
-**Never add product strategy here:** no brief or PDRD content, pricing, competitive analysis or business plans. This repo is public. Implementation work cites task IDs (`[T-F36-02]`) in commits; the documents those IDs refer to stay in `speckled-hq`.
+**Never add product strategy here:** no brief or PDRD content, pricing, competitive analysis or business plans. This repo is public. Implementation work cites task IDs (`[T-F36-02]`) in commits; the documents those IDs refer to stay in `speckled-hq`. Code, comments, tests and docs never cite those documents' requirement or design references (`FR3`, `NFR6`, `TDD-F07 D14`): readers can't look them up. Generic examples of how a project cites its own requirements are fine.
 
 ## Layout
 

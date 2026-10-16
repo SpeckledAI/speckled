@@ -9,7 +9,7 @@ Why this file exists:
 What it does, per tool call:
     1. Reads the hook payload (JSON on stdin). Unreadable payload: allow (exit 0).
     2. Finds the Speckled project from the session's folder. None, or enforcement off:
-       allow, with no output, exactly as if the gate weren't installed (NFR6).
+       allow, with no output, exactly as if the gate weren't installed.
     3. Turns the tool call into actions and judges each one.
     4. Acts on the outcome:
        ok: allow, with no output.
@@ -22,7 +22,7 @@ What it does, per tool call:
          `systemMessage` (for the user). Never `permissionDecision`: "allow" would skip
          the user's permission prompt, and the gate only ever restricts.
 
-`log_guard_block()` logs the guard's blocks for pretooluse.py (TDD-F07 D14).
+`log_guard_block()` logs the guard's blocks for pretooluse.py.
 
 Failing closed: once enforcement is known to be on, an unexpected error blocks the
 call (exit 2) with a message saying how to switch the gate off. Claude Code treats a
@@ -101,7 +101,7 @@ def run(payload: dict, argv: list[str]) -> int:
 
 
 def _log_violations(project, payload: dict, tool: str, violations: list, mode: str) -> None:
-    """Append one entry per violation; `mode` is the outcome, warn or block (TDD-F07 D14)."""
+    """Append one entry per violation; `mode` is the outcome, warn or block."""
     from speckled_gate import log
     from speckled_gate.rules import active_marker
 
@@ -115,7 +115,7 @@ def _log_violations(project, payload: dict, tool: str, violations: list, mode: s
 
 def log_guard_block(payload: dict, rule: str, argv: list[str]) -> None:
     """Log a block by the guard (rm -rf, secret .env), if a Speckled project with
-    enforcement on is found (TDD-F07 D14). Called by pretooluse.py after the guard has
+    enforcement on is found. Called by pretooluse.py after the guard has
     decided; never raises, and never changes the guard's answer.
     """
     try:

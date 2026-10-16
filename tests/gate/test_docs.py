@@ -6,7 +6,7 @@ from pathlib import Path
 from speckled_gate.docs import DocError, find_task, front_matter, load_task_lists, parse_task_list
 from speckled_gate.yamlio import YamlError
 
-# The dependency graph of a real 15-task list (TASKS-F07), with generic titles.
+# The dependency graph of a real 15-task list, with generic titles.
 GRAPH = {
     1: [], 2: [], 3: [2], 4: [2], 5: [2], 6: [3, 4, 5], 7: [6], 8: [1, 6, 7],
     9: [7], 10: [4, 8], 11: [3, 7], 12: [11], 13: [8, 9, 12], 14: [8], 15: [13, 14],

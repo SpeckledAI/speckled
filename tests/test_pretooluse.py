@@ -127,7 +127,7 @@ class GateThroughEntry:
         reason = guard_reason(payload)
         if reason:
             self.assertEqual((code, stdout, stderr), (2, "", f"speckled guard: {reason}\n"))
-            # The guard's block is logged as one block entry (TDD-F07 D14) [T-F07-20].
+            # The guard's block is logged as one block entry [T-F07-20].
             rule = {guard.RM_MESSAGE: "recursive-delete", guard.ENV_MESSAGE: "secret-env-file"}[reason]
             self.assertEqual([(e["mode"], e["rule"]) for e in entry_log], [("block", rule)])
             # The case goes on to check gate.py's log, so put that back.
@@ -188,7 +188,7 @@ class GuardComesFirst(test_gate_hook.HookFixture):
         self.assertTrue(self.run_hook(payload)[1])
         (self.plans / ".speckled" / "log.jsonl").unlink()
         # ... but through the entry script the guard stops it first, and it's logged as a
-        # guard block, not a warn event (TDD-F07 D14) [T-F07-20].
+        # guard block, not a warn event [T-F07-20].
         self.assertEqual(run_entry(payload, self.data), (2, "", f"speckled guard: {guard.RM_MESSAGE}\n"))
         entries = [json.loads(line) for line in self.log_lines()]
         self.assertEqual([(e["mode"], e["rule"], e["paths"]) for e in entries],
@@ -235,7 +235,7 @@ class PluginCopy(test_gate_hook.HookFixture):
 
 
 class BrokenGate(PluginCopy):
-    """NFR6, R10: broken gate code can't stop the guard, and allows everything else."""
+    """Broken gate code can't stop the guard, and allows everything else."""
     gate_source = 'raise RuntimeError("broken gate")\n'
 
     def test_guard_still_blocks(self):
@@ -251,7 +251,7 @@ class BrokenGate(PluginCopy):
 
 
 class BrokenGateLib(PluginCopy):
-    """R10: broken rules in lib/ can't stop the guard; the gate, unable to load them, allows."""
+    """Broken rules in lib/ can't stop the guard; the gate, unable to load them, allows."""
     gate_source = (ROOT / "hooks" / "gate.py").read_text()
 
     def setUp(self):

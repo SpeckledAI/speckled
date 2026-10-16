@@ -95,7 +95,7 @@ class SharedValidation(test_rules.Fixture):
 
 
 class Story11(test_rules.Fixture):
-    """FRD-F07 story 11: edits stop once the active task is Done."""
+    """Edits stop once the active task is Done."""
 
     def test_edit_allowed_then_blocked_after_done(self):
         project = self.project()
@@ -122,7 +122,7 @@ class BuildSkill(test_rules.Fixture):
 
 
 class TaskPointer(test_rules.Fixture):
-    """The task-list files recorded at activation (TDD-F07 v4 D5) [T-F07-16]."""
+    """The task-list files recorded at activation [T-F07-16]."""
 
     F03 = test_rules.task_list("TASKS-F03", "approved", [
         ("T-F03-01", "Done", []),
@@ -154,7 +154,7 @@ class TaskPointer(test_rules.Fixture):
         self.assertTrue(activate(project, "T-F01-02").ok)
         (self.tasks / "F09.md").write_text(test_rules.task_list("TASKS-F09", "approved", [("T-F09-01", "Doing", [])]))
         self.assertIsNone(self.edit_rule(project))
-        # Without the pointer, every list is read, and the broken one blocks (NFR4).
+        # Without the pointer, every list is read, and the broken one blocks.
         self.marker_without_files()
         self.assertEqual(self.edit_rule(project), "config-unreadable")
 

@@ -106,7 +106,7 @@ def _check(args) -> int:
     result = {"decision": "ok", "violations": []}
     if project is not None and project.enforcement != "off":
         verdicts = [decide(project, a) for a in actions_for(args.tool, tool_input, project, args.cwd)]
-        # The same outcome the hook acts on (TDD-F07 D12): hard rules block in warn mode too.
+        # The same outcome the hook acts on: hard rules block in warn mode too.
         result["decision"] = outcome(project.enforcement, verdicts)
         for verdict in verdicts:
             if verdict.ok:
