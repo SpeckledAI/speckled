@@ -3,7 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from speckled_gate.docs import DocError, find_task, front_matter, load_task_lists, parse_task_list
+from speckled_gate.docs import (ApprovedBy, DocError, find_task, front_matter, load_task_lists,
+                                parse_task_list)
 from speckled_gate.yamlio import YamlError
 
 # The dependency graph of a real 15-task list, with generic titles.
@@ -119,6 +120,64 @@ class Structure(unittest.TestCase):
         with self.assertRaises(DocError) as ctx:
             parse_task_list(minimal("", front="id: TASKS-F01\ntype: tasks\nversion: 1"), "x.md")
         self.assertIn("'status'", ctx.exception.reason)
+
+
+class ApprovedByLines(unittest.TestCase):
+    """`Approved by` lines are recorded per task; a malformed one never raises [T-F08-02]."""
+
+    def approved_by(self, tasks_md: str, task: str = "T-F01-01") -> list:
+        return parse_task_list(minimal(tasks_md), "x.md").tasks[task].approved_by
+
+    def line_of(self, tasks_md: str, line: str) -> int:
+        return minimal(tasks_md).splitlines().index(line) + 1
+
+    def test_one_line(self):
+        md = "### T-F01-01: A\n- **Status:** Done\n\nApproved by alice on 2026-10-15\n"
+        self.assertEqual(self.approved_by(md), [
+            ApprovedBy("alice", "2026-10-15", self.line_of(md, "Approved by alice on 2026-10-15"))])
+
+    def test_lines_are_kept_in_file_order(self):
+        md = ("### T-F01-01: A\n- **Status:** Done\n\nApproved by alice on 2026-10-15\n\n"
+              "Approved by bob on 2026-10-16\n")
+        self.assertEqual([(a.name, a.date) for a in self.approved_by(md)],
+                         [("alice", "2026-10-15"), ("bob", "2026-10-16")])
+
+    def test_name_with_spaces(self):
+        md = "### T-F01-01: A\n- **Status:** Done\n\nApproved by Ada Lovelace on 2026-10-15\n"
+        self.assertEqual([(a.name, a.date) for a in self.approved_by(md)],
+                         [("Ada Lovelace", "2026-10-15")])
+
+    def test_trailing_note(self):
+        md = ("### T-F01-01: A\n- **Status:** Done\n\n"
+              "Approved by Ada Lovelace on 2026-10-15 (CI green on 2026-10-16 (all jobs))\n\n"
+              "Approved by bob on 2026-10-16\n")
+        self.assertEqual([(a.name, a.date, a.note) for a in self.approved_by(md)],
+                         [("Ada Lovelace", "2026-10-15", "CI green on 2026-10-16 (all jobs)"),
+                          ("bob", "2026-10-16", None)])
+
+    def test_malformed_lines_are_recorded_without_raising(self):
+        for written in ["Approved by alice 2026-10-15", "Approved by on 2026-10-15",
+                        "Approved by alice on 2026-1-5", "Approved by",
+                        "Approved by alice on 2026-10-15 CI green", "Approved by alice on 2026-10-15 ()",
+                        "Approved by alice on 2026-10-15x"]:
+            with self.subTest(written):
+                md = f"### T-F01-01: A\n- **Status:** Done\n\n{written}\n"
+                self.assertEqual(self.approved_by(md), [ApprovedBy(None, None, self.line_of(md, written))])
+
+    def test_outside_a_task_or_in_a_code_fence_is_ignored(self):
+        md = ("Approved by alice on 2026-10-15\n\n### T-F01-01: A\n- **Status:** Done\n\n"
+              "```markdown\nApproved by bob on 2026-10-15\n```\n\n## Coverage\n\n"
+              "Approved by carol on 2026-10-15\n")
+        self.assertEqual(self.approved_by(md), [])
+
+    def test_task_without_lines(self):
+        self.assertEqual(self.approved_by("### T-F01-01: A\n- **Status:** Todo\n"), [])
+
+    def test_real_shaped_list(self):
+        tl = parse_task_list(task_list_text({1: "Done"}), "x.md")
+        self.assertEqual([(a.name, a.date) for a in tl.tasks[tid(1)].approved_by],
+                         [("alice", "2026-10-08")])
+        self.assertEqual(tl.tasks[tid(2)].approved_by, [])
 
 
 class FrontMatter(unittest.TestCase):

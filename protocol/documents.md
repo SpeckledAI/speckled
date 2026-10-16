@@ -232,9 +232,10 @@ When a human approves a task's code, `/speckled:approve` adds this line inside t
 
 ```markdown
 Approved by alice on 2026-10-02
+Approved by alice on 2026-10-02 (CI passed on every platform)
 ```
 
-The shape is exactly `Approved by <name> on <YYYY-MM-DD>`. A line inside a task that starts `Approved by` and doesn't match it is a `task-format` error.
+The shape is exactly `Approved by <name> on <YYYY-MM-DD>`, optionally followed by a space and a note in brackets, `(<note>)`. A line inside a task that starts `Approved by` and doesn't match it is a `task-format` error. The note is part of the line, so once committed it can't be changed either.
 
 ### Approvers
 
@@ -260,7 +261,7 @@ These rules hold across the planning repo's history and from the last commit to 
 | `duplicate-id` | error | Two documents have the same `id`. |
 | `file-name` | error | The file isn't where its `id` and `type` say it should be. |
 | `unknown-feature` | error | An FRD, TDD or task list names a feature that isn't a `### Fnn:` heading in the PDRD. |
-| `task-format` | error | The task list breaks the strict task format, or an `Approved by` line isn't `Approved by <name> on <YYYY-MM-DD>`. |
+| `task-format` | error | The task list breaks the strict task format, or an `Approved by` line isn't `Approved by <name> on <YYYY-MM-DD>` with an optional `(<note>)`. |
 | `duplicate-task` | error | A task ID appears in more than one task list. |
 | `dependency-missing` | error | A `Depends on` ID isn't a task in any list. |
 | `dependency-cycle` | error | Tasks depend on each other in a cycle. Reported once, on the cycle's lowest task ID. |

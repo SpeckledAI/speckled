@@ -16,6 +16,9 @@ What it does:
           - **Depends on:** T-F07-01, T-F07-02      (task IDs, or "none")
           - **Status:** In progress                 (Todo | In progress | In review | Done)
 
+      It also records each task's `Approved by <name> on <YYYY-MM-DD>` lines, each with
+      an optional `(<note>)` after the date (protocol §9). A malformed one is kept with
+      `name=None` and never raises.
     - `load_task_lists()` reads every task list in `<docs_dir>/tasks/` and
       `<docs_dir>/tasks/completed/`, skipping other documents; `load_task_list()` reads
       one file the same way.
@@ -28,6 +31,8 @@ Design rules:
     - Anything that doesn't follow the format raises DocError naming the file and line,
       because the gate must not guess about approvals. A typo in a status blocks edits
       until it's fixed; it never silently changes what the gate allows.
+    - `Approved by` lines are the exception: the gate doesn't use them, so a typo in one
+      is left for the linter to report instead of blocking code edits.
 """
 from __future__ import annotations
 
@@ -44,6 +49,8 @@ _TASK_HEADING = re.compile(r"^### (T-F\d{2,}-\d{2,}):")    # "### T-F07-03: Titl
 _BLOCK_END = re.compile(r"^#{1,3} ")                       # any heading of level 1-3
 _STATUS_LINE = re.compile(r"^- \*\*Status:\*\*\s*(.+?)\s*$")
 _DEPENDS_LINE = re.compile(r"^- \*\*Depends on:\*\*(.*)$")
+# "Approved by Ada Lovelace on 2026-10-15", optionally followed by " (<note>)".
+_APPROVED_BY = re.compile(r"^Approved by (\S.*?) on (\d{4}-\d{2}-\d{2})(?:\s+\((.+)\))?\s*$")
 # The four allowed statuses, keyed by lower case so "done" or "IN REVIEW" are accepted
 # and stored in their canonical spelling.
 _STATUSES = {s.lower(): s for s in ("Todo", "In progress", "In review", "Done")}
@@ -71,13 +78,24 @@ class Task:
     status: str             # "Todo", "In progress", "In review" or "Done"
     depends_on: list[str]   # task IDs this task waits for; [] if none
     line: int               # line of the task's heading, for error messages
+    approved_by: list[ApprovedBy] = field(default_factory=list)   # in file order
+
+
+@dataclass(frozen=True)
+class ApprovedBy:
+    """An `Approved by <name> on <YYYY-MM-DD> [(<note>)]` line inside a task (protocol §9)."""
+
+    name: str | None   # None if the line starts "Approved by" but doesn't match the shape
+    date: str | None
+    line: int
+    note: str | None = None   # the text inside the optional trailing brackets
 
 
 @dataclass
 class TaskList:
     """One task list document (TASKS-Fnn) and its tasks."""
 
-    id: str                 # front-matter id, e.g. "TASKS-F07"
+    id: str                 # front-matter id
     status: str             # the list's own status; only "approved" opens the code gate
     version: int
     path: str               # the file it was read from, for error messages
@@ -107,8 +125,9 @@ def parse_task_list(text: str, path: str) -> TaskList:
     """Parse a task list's front matter and its tasks.
 
     Reads the file line by line. A `### T-Fnn-kk:` heading starts a task; within it,
-    the first `Status` line and the first `Depends on` line are recorded; the task ends
-    at the next heading of level 1-3. `path` is only used in error messages.
+    the first `Status` line and the first `Depends on` line are recorded, and every
+    `Approved by` line is kept; the task ends at the next heading of level 1-3. `path`
+    is only used in error messages.
     """
     # 1. Front matter: the list's id, status and version are required.
     try:
@@ -122,7 +141,7 @@ def parse_task_list(text: str, path: str) -> TaskList:
                          version=meta["version"], path=path)
 
     # 2. Tasks.
-    current = None  # the task being read: {"id", "line", "status", "depends_on"}
+    current = None  # the task being read: {"id", "line", "status", "depends_on", "approved_by"}
     in_fence = False  # inside a ``` code block
 
     def finish():
@@ -134,7 +153,8 @@ def parse_task_list(text: str, path: str) -> TaskList:
         if current["id"] in task_list.tasks:
             raise DocError(path, current["line"], f"{current['id']} appears more than once")
         task_list.tasks[current["id"]] = Task(current["id"], current["status"],
-                                              current["depends_on"] or [], current["line"])
+                                              current["depends_on"] or [], current["line"],
+                                              current["approved_by"])
 
     for number, line in enumerate(text.splitlines(), start=1):
         # Headings inside ``` code blocks are examples, not tasks.
@@ -147,11 +167,20 @@ def parse_task_list(text: str, path: str) -> TaskList:
         if _BLOCK_END.match(line):
             finish()
             heading = _TASK_HEADING.match(line)
-            current = ({"id": heading.group(1), "line": number, "status": None, "depends_on": None}
+            current = ({"id": heading.group(1), "line": number, "status": None,
+                        "depends_on": None, "approved_by": []}
                        if heading else None)
             continue
         if current is None:
             continue  # outside any task (overview, coverage, ...)
+        # Approval lines are recorded, never checked here: the linter reports bad ones.
+        stripped = line.strip()
+        if stripped.startswith("Approved by"):
+            approved = _APPROVED_BY.match(stripped)
+            current["approved_by"].append(
+                ApprovedBy(approved.group(1), approved.group(2), number, approved.group(3))
+                if approved else ApprovedBy(None, None, number))
+            continue
         # The first Status line is the task's status; later ones are ignored.
         status = _STATUS_LINE.match(line)
         if status and current["status"] is None:
