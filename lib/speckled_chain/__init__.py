@@ -17,6 +17,9 @@ What it exports:
     - `lint(root, *, history=True, feature=None, scope=None) -> Report`: run the checks.
       Raises `ConfigError` or `OSError` where the command exits 2. It never prints and
       never writes.
+    - `chain_for(corpus, id) -> list[str]`: the IDs from a task or document up its
+      chain, such as `T-F12-03` -> `[TASKS-F12, TDD-F12, FRD-F12, PDRD, BRIEF]`
+      (`chain.py`).
     - `Finding`, `Report`: the results (`report.py`).
     - `RULES`, `explain`: the rule registry (`rules.py`).
 """
@@ -24,20 +27,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .chain import chain_for, check_chain
 from .config import ConfigError
 from .corpus import Corpus, load_corpus
 from .report import Finding, Report, plugin_version
 from .rules import RULES, explain
 from .structure import check_structure
 
-__all__ = ["lint", "load_corpus", "Corpus", "Finding", "Report", "RULES", "explain", "ConfigError"]
+__all__ = ["lint", "load_corpus", "chain_for", "Corpus", "Finding", "Report", "RULES", "explain",
+           "ConfigError"]
 
 
 def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
          scope=None) -> Report:
     """Check the planning repo at `root` and return the report."""
     corpus = load_corpus(root)
-    findings = list(corpus.broken.values()) + check_structure(corpus)
-    # History, scoping and the remaining checks are added by later tasks [T-F08-05].
+    findings = list(corpus.broken.values()) + check_structure(corpus) + check_chain(corpus)
+    # History, scoping and the remaining checks are added by later tasks [T-F08-06].
     return Report(project=corpus.config.project, plugin_version=plugin_version(), history="none",
                   documents=corpus.documents, commits=0, findings=findings)

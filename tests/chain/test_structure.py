@@ -106,7 +106,7 @@ class Structure(unittest.TestCase):
 
     def test_missing_parent_is_left_to_the_chain_check(self):
         self.write("tdds/F01-example.md", tdd("F01", parent=None))
-        self.assertFindings()
+        self.assertFindings(("parent-missing", "tdds/F01-example.md", 1))
 
     def test_unknown_type(self):
         text = self.write("research/a.md", research("a", type="memo"))
@@ -147,7 +147,10 @@ class Structure(unittest.TestCase):
     def test_badly_formed_ids(self):
         self.write("pdrd.md", pdrd(id="ROADMAP"))
         self.write("tdds/F01-example.md", tdd("F01", id="TDD-01"))
-        self.assertFindings(("bad-id", "pdrd.md", 2), ("bad-id", "tdds/F01-example.md", 2))
+        # Their children now cite IDs no document has.
+        self.assertFindings(("bad-id", "pdrd.md", 2), ("bad-id", "tdds/F01-example.md", 2),
+                            ("parent-missing", "frds/F01-example.md", line_of(frd("F01"), "parent:")),
+                            ("parent-missing", TASKS, line_of(tasks("F01"), "parent:")))
 
     def test_task_heading_that_isnt_a_task_id(self):
         text = self.tasks(task("T-F01-01"))
@@ -194,7 +197,7 @@ class Structure(unittest.TestCase):
 
     def test_no_unknown_feature_without_a_pdrd(self):
         self.repo.delete(self.repo.doc("pdrd.md"))
-        self.assertFindings()
+        self.assertFindings(("parent-missing", "frds/F01-example.md", line_of(frd("F01"), "parent:")))
 
     # --- tasks -------------------------------------------------------------------------
 
