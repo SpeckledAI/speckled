@@ -12,6 +12,8 @@ Why this package exists:
     linter and the hook always agree on what a file says.
 
 What it exports:
+    - `load_corpus(root) -> Corpus`: the config and every document, parsed once
+      (`corpus.py`).
     - `lint(root, *, history=True, feature=None, scope=None) -> Report`: run the checks.
       Raises `ConfigError` or `OSError` where the command exits 2. It never prints and
       never writes.
@@ -22,17 +24,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .config import ConfigError, load_config
+from .config import ConfigError
+from .corpus import Corpus, load_corpus
 from .report import Finding, Report, plugin_version
 from .rules import RULES, explain
+from .structure import check_structure
 
-__all__ = ["lint", "Finding", "Report", "RULES", "explain", "ConfigError"]
+__all__ = ["lint", "load_corpus", "Corpus", "Finding", "Report", "RULES", "explain", "ConfigError"]
 
 
 def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
          scope=None) -> Report:
     """Check the planning repo at `root` and return the report."""
-    config = load_config(root)
-    # The corpus and the checks are added by later tasks [T-F08-03].
-    return Report(project=config.project, plugin_version=plugin_version(), history="none",
-                  documents=0, commits=0, findings=[])
+    corpus = load_corpus(root)
+    findings = list(corpus.broken.values()) + check_structure(corpus)
+    # History, scoping and the remaining checks are added by later tasks [T-F08-05].
+    return Report(project=corpus.config.project, plugin_version=plugin_version(), history="none",
+                  documents=corpus.documents, commits=0, findings=findings)
