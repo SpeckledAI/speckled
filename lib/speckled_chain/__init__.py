@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .approvals import check_approvers, current_roles
 from .chain import chain_for, check_chain
 from .config import ConfigError
 from .corpus import Corpus, load_corpus
@@ -43,6 +44,8 @@ def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
     """Check the planning repo at `root` and return the report."""
     corpus = load_corpus(root)
     findings = list(corpus.broken.values()) + check_structure(corpus) + check_chain(corpus)
-    # History, scoping and the remaining checks are added by later tasks [T-F08-06].
+    # Without history, approvers are checked against the current roles [T-F08-07].
+    findings += check_approvers(corpus, current_roles(corpus))
+    # History, scoping and the remaining checks are added by later tasks.
     return Report(project=corpus.config.project, plugin_version=plugin_version(), history="none",
                   documents=corpus.documents, commits=0, findings=findings)

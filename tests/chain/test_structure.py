@@ -65,7 +65,7 @@ class Structure(unittest.TestCase):
         self.assertFindings()
 
     def test_approved_by_with_a_note(self):
-        self.tasks(task("T-F01-01", "Done", approved_by=["Approved by Ada Lovelace on 2026-10-02 (CI passed)"]))
+        self.tasks(task("T-F01-01", "Done", approved_by=["Approved by alice on 2026-10-02 (CI passed)"]))
         self.assertFindings()
 
     def test_completed_documents(self):
