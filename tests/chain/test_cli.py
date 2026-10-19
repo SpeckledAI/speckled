@@ -69,7 +69,8 @@ class Cli(unittest.TestCase):
         self.assertIn("--explain", out.stdout)
 
     def test_minimal_project(self):
-        out = self.run_cli()
+        # A plain folder: history has its own tests [T-F08-08].
+        out = self.run_cli("--docs")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("speckled lint-chain: example", out.stdout)
         self.assertTrue(out.stdout.endswith("No problems found.\n"))
@@ -87,13 +88,13 @@ class Cli(unittest.TestCase):
 
     def test_output(self):
         target = self.tmp / "report.json"
-        out = self.run_cli("--output", str(target))
+        out = self.run_cli("--docs", "--output", str(target))
         self.assertEqual(out.returncode, 0)
         self.assertIn("No problems found.", out.stdout)  # text still printed
         self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["tool"], "lint-chain")
 
     def test_output_failure_after_text(self):
-        out = self.run_cli("--output", str(self.tmp / "missing" / "report.json"))
+        out = self.run_cli("--docs", "--output", str(self.tmp / "missing" / "report.json"))
         self.assertEqual(out.returncode, 2)
         self.assertIn("No problems found.", out.stdout)
         self.assertEqual(len(out.stderr.splitlines()), 1)

@@ -14,7 +14,8 @@ What it does:
     - `--explain RULE` prints a rule's meaning and fix.
 
 Exit codes: 0 no errors; 1 an error (or, with `--strict`, any finding); 2 couldn't run
-(no `speckled.yaml`, an unusable config, a read or write failure); 64 usage error, as in
+(no `speckled.yaml`, an unusable config, git missing or failing, a read or write
+failure); 64 usage error, as in
 `speckled-gate`.
 """
 from __future__ import annotations
@@ -28,6 +29,7 @@ from pathlib import Path
 
 from . import lint
 from .config import ConfigError
+from .history import GitError
 from .rules import RULES, explain
 
 USAGE_ERROR = 64
@@ -71,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         return CANT_RUN
     try:
         report = lint(root, history=not args.docs, feature=args.feature)
-    except ConfigError as e:
+    except (ConfigError, GitError) as e:
         return _cant_run(str(e))
     except OSError as e:
         return _cant_run(str(e))

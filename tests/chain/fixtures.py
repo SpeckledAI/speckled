@@ -74,6 +74,9 @@ def git(repo: Path, *args: str, home: Path, minute: int = 0, author: str | None 
     return out.stdout
 
 
+_run_git = git   # for PlanRepo, whose `git` argument hides this function
+
+
 def _inside_temp(path: Path) -> Path:
     """`path`, resolved, refusing anything outside the system's temporary folder."""
     resolved = path.resolve()
@@ -84,23 +87,31 @@ def _inside_temp(path: Path) -> Path:
 
 
 class PlanRepo:
-    """A planning repo at `<tmp>/plans`, with `speckled.yaml` and, by default, git."""
+    """A planning repo at `<tmp>/plans`, with `speckled.yaml` and, by default, git.
+
+    `nested=True` puts it at `<tmp>/repo/plans`, a folder inside a larger git repository
+    whose root is `<tmp>/repo`. `object_format="sha256"` makes a SHA-256 repository.
+    """
 
     def __init__(self, tmp, roles: dict | None = None, docs_dir: str = "docs", git: bool = True,
-                 project: str = "example"):
+                 project: str = "example", nested: bool = False, object_format: str | None = None):
         self.tmp = _inside_temp(Path(tmp))
-        self.root = self.tmp / "plans"
+        self.git_root = self.tmp / "repo" if nested else self.tmp / "plans"
+        self.root = self.git_root / "plans" if nested else self.git_root
         self.docs_dir = docs_dir
         self.has_git = git
         self.minute = 0
-        self.root.mkdir()
+        self.root.mkdir(parents=True)
         if roles is None:
             roles = {gate: ["alice"] for gate in GATES}
         lines = [f"project: {project}", f"docs_dir: {docs_dir}", "roles:"]
         lines += [f"  {gate}: {json.dumps(names)}" for gate, names in roles.items()]
         self.write("speckled.yaml", "\n".join(lines) + "\n")
         if git:
-            self.git("init", "-q", "--template=", "-b", "main")
+            init = ["init", "-q", "--template=", "-b", "main"]
+            if object_format:
+                init.append(f"--object-format={object_format}")
+            _run_git(self.git_root, *init, home=self.tmp)
             self.git("config", "commit.gpgsign", "false")
 
     def git(self, *args: str, author: str | None = None) -> str:

@@ -34,7 +34,7 @@ class Structure(unittest.TestCase):
         return text
 
     def findings(self):
-        findings = lint(self.repo.root).findings
+        findings = lint(self.repo.root, history=False).findings
         for f in findings:
             self.assertNotIn(SENTINEL, f.message)
             self.assertNotIn(SENTINEL, f.subject)
@@ -55,7 +55,7 @@ class Structure(unittest.TestCase):
     # --- clean passes ----------------------------------------------------------------
 
     def test_clean_project(self):
-        report = lint(self.repo.root)
+        report = lint(self.repo.root, history=False)
         self.assertEqual(report.findings, [])
         self.assertEqual(report.documents, 5)
 

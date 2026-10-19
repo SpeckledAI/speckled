@@ -28,7 +28,7 @@ class Chain(unittest.TestCase):
         return text
 
     def findings(self):
-        findings = lint(self.repo.root).findings
+        findings = lint(self.repo.root, history=False).findings
         for f in findings:
             self.assertNotIn(SENTINEL, f.message)
         return findings

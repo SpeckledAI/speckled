@@ -15,8 +15,8 @@ What it exports:
     - `load_corpus(root) -> Corpus`: the config and every document, parsed once
       (`corpus.py`).
     - `lint(root, *, history=True, feature=None, scope=None) -> Report`: run the checks.
-      Raises `ConfigError` or `OSError` where the command exits 2. It never prints and
-      never writes.
+      Raises `ConfigError`, `GitError` or `OSError` where the command exits 2. It never
+      prints and never writes.
     - `chain_for(corpus, id) -> list[str]`: the IDs from a task or document up its
       chain, such as `T-F12-03` -> `[TASKS-F12, TDD-F12, FRD-F12, PDRD, BRIEF]`
       (`chain.py`).
@@ -31,12 +31,13 @@ from .approvals import check_approvers, current_roles
 from .chain import chain_for, check_chain
 from .config import ConfigError
 from .corpus import Corpus, load_corpus
+from .history import GitError, open_history
 from .report import Finding, Report, plugin_version
 from .rules import RULES, explain
 from .structure import check_structure
 
 __all__ = ["lint", "load_corpus", "chain_for", "Corpus", "Finding", "Report", "RULES", "explain",
-           "ConfigError"]
+           "ConfigError", "GitError"]
 
 
 def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
@@ -46,6 +47,11 @@ def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
     findings = list(corpus.broken.values()) + check_structure(corpus) + check_chain(corpus)
     # Without history, approvers are checked against the current roles [T-F08-07].
     findings += check_approvers(corpus, current_roles(corpus))
-    # History, scoping and the remaining checks are added by later tasks.
-    return Report(project=corpus.config.project, plugin_version=plugin_version(), history="none",
-                  documents=corpus.documents, commits=0, findings=findings)
+    status, commits = "none", 0
+    if history:
+        past = open_history(corpus.root, corpus.config.docs_dir)
+        findings += past.findings
+        status, commits = past.status, len(past.commits)
+    # The history checks, scoping and the log checks are added by later tasks [T-F08-08].
+    return Report(project=corpus.config.project, plugin_version=plugin_version(), history=status,
+                  documents=corpus.documents, commits=commits, findings=findings)
