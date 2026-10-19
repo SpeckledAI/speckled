@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .approvals import check_approvers, current_roles
+from .approvals import check_append_only, check_approvers, current_roles, history_roles
 from .chain import chain_for, check_chain
 from .config import ConfigError
 from .corpus import Corpus, load_corpus
@@ -45,13 +45,18 @@ def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
     """Check the planning repo at `root` and return the report."""
     corpus = load_corpus(root)
     findings = list(corpus.broken.values()) + check_structure(corpus) + check_chain(corpus)
-    # Without history, approvers are checked against the current roles [T-F08-07].
-    findings += check_approvers(corpus, current_roles(corpus))
     status, commits = "none", 0
-    if history:
-        past = open_history(corpus.root, corpus.config.docs_dir)
+    past = open_history(corpus.root, corpus.config.docs_dir) if history else None
+    if past is not None:
         findings += past.findings
         status, commits = past.status, len(past.commits)
-    # The history checks, scoping and the log checks are added by later tasks [T-F08-08].
+    if status == "full":
+        # Each approval is checked against the roles of the commit that added it [T-F08-09].
+        roles_for, added = history_roles(corpus, past)
+        findings += check_approvers(corpus, roles_for, added) + check_append_only(past)
+    else:
+        # Without history, approvers are checked against the current roles [T-F08-07].
+        findings += check_approvers(corpus, current_roles(corpus))
+    # Scoping and the remaining history and log checks are added by later tasks [T-F08-08].
     return Report(project=corpus.config.project, plugin_version=plugin_version(), history=status,
                   documents=corpus.documents, commits=commits, findings=findings)

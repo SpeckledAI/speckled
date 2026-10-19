@@ -9,7 +9,8 @@ Why this module exists:
     through `speckled_gate.yamlio`, so both read the file the same way.
 
 What it does:
-    - `load_config(root)` returns `Config(project, docs_dir, roles)`.
+    - `load_config(root)` returns `Config(project, docs_dir, roles)`; `parse_config(text,
+      root)` does the same for text already read.
       `project` defaults to the folder's name, `docs_dir` to `docs` and `roles` to `{}`.
     - Raises `ConfigError(reason, line)` for unreadable YAML, a `docs_dir` that isn't a
       string, a `roles` that isn't a mapping, or a role whose value isn't a list of
@@ -42,7 +43,12 @@ class Config:
 
 def load_config(root: str | Path) -> Config:
     root = Path(root)
-    text = (root / "speckled.yaml").read_text(encoding="utf-8")
+    return parse_config((root / "speckled.yaml").read_text(encoding="utf-8"), root)
+
+
+def parse_config(text: str, root: str | Path) -> Config:
+    """`load_config` for text already read, such as `speckled.yaml` at an earlier commit."""
+    root = Path(root)
     try:
         data = loads(text)
     except YamlError as e:
