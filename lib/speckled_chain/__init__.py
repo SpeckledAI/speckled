@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .approvals import check_append_only, check_approvers, current_roles, history_roles
+from .approvals import check_append_only, check_approvers, check_reopened, current_roles, history_roles
 from .chain import chain_for, check_chain
 from .config import ConfigError
 from .corpus import Corpus, load_corpus
@@ -54,6 +54,8 @@ def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
         # Each approval is checked against the roles of the commit that added it [T-F08-09].
         roles_for, added = history_roles(corpus, past)
         findings += check_approvers(corpus, roles_for, added) + check_append_only(past)
+        # Edits to approved or done documents reopen review [T-F08-10].
+        findings += check_reopened(past)
     else:
         # Without history, approvers are checked against the current roles [T-F08-07].
         findings += check_approvers(corpus, current_roles(corpus))

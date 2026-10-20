@@ -39,12 +39,20 @@ What it does:
     isn't compared; the next readable one is compared with the last readable one
     before it, so breaking a file can't hide a removal.
 
-Messages quote only structured values (IDs, gates, approver names, commit IDs), never a
-title, body text or an approval's note.
+    `check_reopened(history)` walks the same changes for `edited-without-review`: an
+    `approved` or `done` document's content changed, but the change neither reopened
+    review (`version` up, `status` `in-review` or `draft`) nor recorded an approval for
+    a new `version` [T-F08-10]. The content is the body, compared after `normalize`,
+    so task progress and whitespace don't count as changing it (protocol §5 rule 4).
+
+Messages quote only structured values (IDs, gates, approver names, statuses, versions,
+commit IDs), never a title, body text or an approval's note.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from dataclasses import replace
 from typing import Callable
 
@@ -52,7 +60,7 @@ from .config import ConfigError, parse_config
 from .corpus import Corpus, Doc, _field_lines
 from .history import Change, Commit, History, Version, entry_keys
 from .report import Finding
-from .structure import TYPES, _finding
+from .structure import TYPES, _finding, _quote
 
 CODE = "code"
 CONFIG = "speckled.yaml"
@@ -164,6 +172,32 @@ def history_roles(corpus: Corpus, history: History) -> tuple[RolesFor, AddedIn]:
 # --- append-only ---------------------------------------------------------------------
 
 def check_append_only(history: History) -> list[Finding]:
+    return _walk(history, _readable, _check_append_only)
+
+
+def _check_append_only(change: Change, before: Version | None, where: str, report) -> None:
+    if change.new is None:
+        old = change.old
+        subject = old.id or old.path
+        report(("document-deleted", change.doc),
+               _finding("document-deleted", subject, old.path, None,
+                        f"{subject} was deleted{where}, not moved."), change.commit)
+    elif before is not None:
+        _check_approvals(change, before, where, report)
+        _check_approved_by(change, before, where, report)
+
+
+Check = Callable[[Change, "Version | None", str, Callable], None]
+
+
+def _walk(history: History, readable: Callable[[Version], bool], check: Check) -> list[Finding]:
+    """Run `check(change, before, where, report)` on every change, oldest first.
+
+    `before` is the change's old version, or, if that one isn't `readable`, the last
+    readable version before it (None if there's none, and for a deletion). Changes
+    whose new version isn't readable are skipped. `report(key, finding, commit)` keeps
+    the first finding for each key, so a fault a merge repeats is reported once.
+    """
     findings: list[Finding] = []
     seen: set[tuple] = set()
 
@@ -177,39 +211,35 @@ def check_append_only(history: History) -> list[Finding]:
         by_commit.setdefault(change.commit.sha if change.commit else None, []).append(change)
     # Each commit's last readable version of each document, following first parents as
     # the history does, so a version that can't be read is compared past, not skipped.
-    readable: dict[str, dict[str, Version]] = {}
+    versions: dict[str, dict[str, Version]] = {}
     for commit in history.commits:
-        base = readable.get(commit.parents[0], {}) if commit.parents else {}
-        readable[commit.sha] = _replay(by_commit.get(commit.sha, []), base, report)
-    _replay(by_commit.get(None, []), readable.get(_head(history), {}), report)
+        base = versions.get(commit.parents[0], {}) if commit.parents else {}
+        versions[commit.sha] = _replay(by_commit.get(commit.sha, []), base, readable, check, report)
+    _replay(by_commit.get(None, []), versions.get(_head(history), {}), readable, check, report)
     return findings
 
 
-def _replay(changes: list[Change], readable: dict[str, Version], report) -> dict[str, Version]:
-    """Check one commit's changes against `readable`; return `readable` as of that commit."""
+def _replay(changes: list[Change], versions: dict[str, Version], readable, check: Check,
+            report) -> dict[str, Version]:
+    """Check one commit's changes against `versions`; return `versions` as of that commit."""
     if not changes:
-        return readable
-    readable = dict(readable)
+        return versions
+    versions = dict(versions)
     for change in changes:
         old, new = change.old, change.new
         if old is None and new is None:
             continue
         where = f" in commit {change.commit.sha[:7]}" if change.commit else " in the working tree"
         if new is None:
-            subject = old.id or old.path
-            report(("document-deleted", change.doc),
-                   _finding("document-deleted", subject, old.path, None,
-                            f"{subject} was deleted{where}, not moved."), change.commit)
-            readable.pop(change.doc, None)
+            check(change, None, where, report)
+            versions.pop(change.doc, None)
             continue
-        if not _readable(new):
+        if not readable(new):
             continue   # compared once it's readable again
-        before = old if old is not None and _readable(old) else readable.get(change.doc)
-        if before is not None:
-            _check_approvals(change, before, where, report)
-            _check_approved_by(change, before, where, report)
-        readable[change.doc] = new
-    return readable
+        before = old if old is not None and readable(old) else versions.get(change.doc)
+        check(change, before, where, report)
+        versions[change.doc] = new
+    return versions
 
 
 def _readable(version: Version) -> bool:
@@ -335,6 +365,83 @@ def _broken(old: list, new: list) -> list[tuple[str, int, int | None]]:
     return out
 
 
+# --- edits reopen review -------------------------------------------------------------
+
+REVIEWED = ("approved", "done")
+REOPENED = ("in-review", "draft")
+# Task progress, which doesn't count as changing a task list's content.
+_STATUS_LINE = re.compile(r"^(\s*- \*\*Status:\*\*).*$")
+_TASK_STATUSES = {"todo", "in progress", "in review", "done"}
+
+
+def normalize(body: str, is_task_list: bool) -> str:
+    """A body as compared for `edited-without-review`.
+
+    Runs of whitespace collapse to one space. In a task list, each `- **Status:**`
+    value and each table cell holding only a task status is blanked, and `Approved by`
+    lines are removed: recording a task's progress doesn't change the plan.
+    """
+    if is_task_list:
+        lines = []
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Approved by"):
+                continue
+            if stripped.startswith("|"):
+                line = "|".join("" if cell.strip().lower() in _TASK_STATUSES else cell
+                                for cell in line.split("|"))
+            lines.append(_STATUS_LINE.sub(r"\1", line))
+        body = "\n".join(lines)
+    return " ".join(body.split())
+
+
+def check_reopened(history: History) -> list[Finding]:
+    return _walk(history, lambda version: isinstance(version.meta, dict), _check_reopened)
+
+
+def _check_reopened(change: Change, before: Version | None, where: str, report) -> None:
+    new = change.new
+    if before is None or new is None:
+        return
+    status, version = before.meta.get("status"), before.meta.get("version")
+    if status not in REVIEWED or not _is_int(version) or before.body == new.body:
+        return
+    is_task_list = before.meta.get("type") == "tasks"
+    old_body, new_body = normalize(before.body, is_task_list), normalize(new.body, is_task_list)
+    if old_body == new_body:
+        return
+    now_status, now_version = new.meta.get("status"), new.meta.get("version")
+    raised = _is_int(now_version) and now_version > version
+    if raised and (now_status in REOPENED or _approves(before, new, now_version)):
+        return
+    subject = new.id or new.path
+    if raised:
+        what = (f"`version` went to {now_version}, but `status` is {_quote(now_status)} and no approval "
+                f"for version {now_version} was recorded")
+    else:
+        what = f"`version` stayed {_quote(now_version)}"
+    # Keyed by the content compared, so a merge that repeats a branch's edit isn't reported again.
+    key = ("edited-without-review", change.doc, _digest(old_body), _digest(new_body))
+    report(key, _finding("edited-without-review", subject, new.path, _doc(new).line("status"),
+                         f"{subject} was {status} at version {version}, and its content changed{where}, "
+                         f"but {what}."), change.commit)
+
+
+def _approves(old: Version, new: Version, version: int) -> bool:
+    """Whether `new` adds an `approvals` entry for `version` that `old` doesn't have."""
+    before = _entries(old.meta) or []
+    return any(isinstance(entry, dict) and entry.get("version") == version and entry not in before
+               for entry in _entries(new.meta) or [])
+
+
+def _is_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def _entries(meta: dict | None) -> list | None:
     """A version's `approvals` entries ([] if there are none), or None if they can't be read."""
     if meta is None:
@@ -347,11 +454,17 @@ def _entries(meta: dict | None) -> list | None:
 
 def _lines(version: Version) -> tuple[int, list[int]]:
     """The line of `approvals:` in `version`, and of each of its entries."""
+    doc = _doc(version)
+    return doc.line("approvals"), doc.approval_lines
+
+
+def _doc(version: Version) -> Doc:
+    """`version` as a `Doc` that knows the line of each front-matter field."""
     doc = Doc(path=version.path, rel="", meta=version.meta or {}, text=version.text)
     lines = version.text.splitlines()
     end = next((n for n in range(1, len(lines)) if lines[n].strip() == "---"), len(lines))
     _field_lines(doc, lines[1:end])
-    return doc.line("approvals"), doc.approval_lines
+    return doc
 
 
 def _at(finding: Finding, commit: Commit | None) -> Finding:

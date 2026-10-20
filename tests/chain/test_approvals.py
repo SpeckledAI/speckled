@@ -1,9 +1,9 @@
-"""Tests for lib/speckled_chain/approvals.py, through `lint` [T-F08-07, T-F08-09].
+"""Tests for lib/speckled_chain/approvals.py, through `lint` [T-F08-07, T-F08-09, T-F08-10].
 
 Each test seeds one fault into the clean fixture project and checks the rule, file,
 line and severity of what's reported, and that nothing else is. `Approvers` needs no
-history, so it runs as `--docs` does. `AppendOnly` and `RolesAtCommit` build real git
-histories.
+history, so it runs as `--docs` does. `AppendOnly`, `RolesAtCommit` and `Reopened`
+build real git histories.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 from unittest import mock
 
 from speckled_chain import lint, load_corpus
-from speckled_chain.approvals import _broken, check_approvers
+from speckled_chain.approvals import _broken, check_approvers, normalize
 
 from .fixtures import (AUTHOR, GATES, SENTINEL, PlanRepo, approval, clean_project, frd, git_env, pdrd,
                        task, tasks)
@@ -139,7 +139,8 @@ class Approvers(unittest.TestCase):
 
 # --- history -------------------------------------------------------------------------
 
-HISTORY_RULES = ("approval-edited", "approval-removed", "document-deleted", "approver-not-listed")
+HISTORY_RULES = ("approval-edited", "approval-removed", "document-deleted", "approver-not-listed",
+                 "edited-without-review")
 
 
 class HistoryTest(unittest.TestCase):
@@ -361,6 +362,112 @@ class RolesAtCommit(HistoryTest):
         self.set_roles(frd=["alice", "bob"])
         self.repo.commit("Fix the config")
         self.assertFindings()
+
+
+EDITED = f"# FRD-F01\n\nChanged text {SENTINEL}.\n"
+
+
+class Reopened(HistoryTest):
+    # --- faults ----------------------------------------------------------------------
+
+    def test_approved_document_edited_without_review(self):
+        text = self.write(FRD, frd(body=EDITED))
+        sha = self.repo.commit("Edit the FRD")
+        self.assertFindings(("edited-without-review", "FRD-F01", FRD, line_of(text, "status:"), sha))
+        (finding,) = self.findings()
+        self.assertEqual((finding.severity, finding.by), ("error", AUTHOR[0]))
+        self.assertIn("approved at version 1", finding.message)
+        self.assertIn(sha[:7], finding.message)
+
+    def test_done_task_list_prose_edited_without_review(self):
+        specs = [task("T-F01-01", "Done", approved_by=[f"Approved by alice on 2026-10-02 ({SENTINEL} checked)"]),
+                 task("T-F01-02", "Done", depends_on=["T-F01-01"], approved_by=["Approved by alice on 2026-10-03"])]
+        self.write(TASKS, tasks(status="done", tasks=specs))
+        self.repo.commit("Finish F01")
+        text = self.write(TASKS, tasks(status="done", tasks=specs).replace("What to build", "What to make", 1))
+        sha = self.repo.commit("Edit a finished task")
+        self.assertFindings(("edited-without-review", "TASKS-F01", TASKS, line_of(text, "status:"), sha))
+        self.assertIn("done at version 1", self.findings()[0].message)
+
+    def test_version_bump_alone(self):
+        text = self.write(FRD, frd(version=2, body=EDITED, approvals=[approval("frd")]))
+        sha = self.repo.commit("Edit as version 2, still approved")
+        self.assertFindings(("edited-without-review", "FRD-F01", FRD, line_of(text, "status:"), sha))
+        self.assertIn("`version` went to 2", self.findings()[0].message)
+
+    def test_new_approval_for_the_old_version_doesnt_count(self):
+        self.write(FRD, frd(version=2, body=EDITED,
+                            approvals=[approval("frd"), approval("frd", date="2026-10-02", version=1)]))
+        sha = self.repo.commit("Edit, approving version 1 again")
+        self.assertEqual([(f.rule, f.commit) for f in self.findings()], [("edited-without-review", sha)])
+
+    def test_uncommitted_edit(self):
+        text = self.write(FRD, frd(body=EDITED))
+        self.assertFindings(("edited-without-review", "FRD-F01", FRD, line_of(text, "status:"), None))
+        self.assertIn("working tree", self.findings()[0].message)
+
+    def test_edit_on_a_branch_is_reported_once(self):
+        self.repo.git("checkout", "-q", "-b", "side")
+        self.write(FRD, frd(body=EDITED))
+        sha = self.repo.commit("Edit on a branch")
+        self.repo.checkout("main")
+        self.repo.merge("side")
+        self.assertEqual([(f.rule, f.commit) for f in self.findings()], [("edited-without-review", sha)])
+
+    # --- exemptions and passes -------------------------------------------------------
+
+    def test_task_progress(self):
+        # The status line, the table cell and a new `Approved by` line all change.
+        self.write(TASKS, tasks(tasks=[
+            task("T-F01-01", "Done", approved_by=[f"Approved by alice on 2026-10-02 ({SENTINEL} checked)"]),
+            task("T-F01-02", "Done", depends_on=["T-F01-01"], approved_by=["Approved by alice on 2026-10-03"])]))
+        self.repo.commit("T-F01-02 is done")
+        self.assertFindings()
+
+    def test_edit_and_reapproval_in_one_commit(self):
+        self.write(FRD, frd(version=2, body=EDITED,
+                            approvals=[approval("frd"), approval("frd", date="2026-10-02", version=2)]))
+        self.repo.commit("Edit and approve version 2")
+        self.assertFindings()
+
+    def test_whitespace_only(self):
+        self.write(FRD, frd(body=f"# FRD-F01\n\n\nBody\t text\n{SENTINEL}.   \n\n"))
+        self.repo.commit("Rewrap")
+        self.assertFindings()
+
+    def test_edit_reopening_review(self):
+        self.write(FRD, frd(version=2, status="in-review", body=EDITED, approvals=[approval("frd")]))
+        self.repo.commit("Edit as version 2, in review")
+        self.assertFindings()
+
+    def test_edit_back_to_draft(self):
+        self.write(FRD, frd(version=2, status="draft", body=EDITED, approvals=[approval("frd")]))
+        self.repo.commit("Edit as version 2, draft")
+        self.assertFindings()
+
+    def test_edits_while_in_review(self):
+        self.write(FRD, frd(version=2, status="in-review", approvals=[approval("frd")]))
+        self.repo.commit("Reopen")
+        self.write(FRD, frd(version=2, status="in-review", body=EDITED, approvals=[approval("frd")]))
+        self.repo.commit("Edit while in review")
+        self.assertFindings()
+
+
+class Normalize(unittest.TestCase):
+    def test_whitespace(self):
+        self.assertEqual(normalize("  a\tb\n\n c  \n", False), "a b c")
+
+    def test_task_progress_is_blanked_only_in_task_lists(self):
+        body = ("| Task | Status |\n|---|---|\n| T-F01-01 | In review |\n"
+                "### T-F01-01: x\n- **Status:** In review\n\nApproved by alice on 2026-10-02\nWhat to build.\n")
+        progressed = ("| Task | Status |\n|---|---|\n| T-F01-01 | done |\n"
+                      "### T-F01-01: x\n- **Status:** Done\n\nWhat to build.\n")
+        self.assertEqual(normalize(body, True), normalize(progressed, True))
+        self.assertNotEqual(normalize(body, False), normalize(progressed, False))
+
+    def test_other_cells_still_count(self):
+        self.assertNotEqual(normalize("| T-F01-01 | Done |\n", True), normalize("| T-F01-02 | Done |\n", True))
+        self.assertNotEqual(normalize("| Done soon |\n", True), normalize("| Todo soon |\n", True))
 
 
 class Broken(unittest.TestCase):
