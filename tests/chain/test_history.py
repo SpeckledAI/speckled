@@ -18,7 +18,7 @@ from speckled_chain.cli import main
 from speckled_chain.history import entry_keys, open_history
 
 from .fixtures import (CLEAN_COMMITS, PlanRepo, approval, clean_project, frd, git_env, research, task,
-                       tasks, tdd)
+                       tasks, tdd, without_log)
 
 FRD = "docs/frds/F01-example.md"
 TDD = "docs/tdds/F01-example.md"
@@ -80,7 +80,7 @@ class Availability(HistoryTest):
     def test_full_history_in_the_report(self):
         self.project()
         report = lint(self.repo.root)
-        self.assertEqual((report.history, report.commits, report.findings), ("full", CLEAN_COMMITS, []))
+        self.assertEqual((report.history, report.commits, without_log(report.findings)), ("full", CLEAN_COMMITS, []))
 
     def test_git_missing_in_a_repo(self):
         self.project()
@@ -165,7 +165,7 @@ class Commits(HistoryTest):
         self.assertEqual([c.new.path for c in history.changes],
                          ["docs/brief.md", "docs/pdrd.md", FRD, TDD, "docs/tasks/F01-example.md"])
         self.assertIn(b"roles:", history.reader.read(history.config_blob(history.commits[-1].sha)))
-        self.assertEqual(lint(self.repo.root).findings, [])
+        self.assertEqual(without_log(lint(self.repo.root).findings), [])
 
     def test_head_that_touched_nothing_tracked(self):
         self.project()

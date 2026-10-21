@@ -300,6 +300,14 @@ def log_line(mode: str = "warn", rule: str = "no-active-task", **kw) -> str:
     return json.dumps(entry) + "\n"
 
 
+LOG = ".speckled/log.jsonl"
+
+
+def without_log(findings: list) -> list:
+    """`findings` without those about the log: the clean project's `warn` line always gives one."""
+    return [f for f in findings if f.file != LOG]
+
+
 CLEAN_COMMITS = 6
 CLEAN_FILES = {
     "speckled.yaml",

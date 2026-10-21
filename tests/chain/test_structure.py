@@ -12,7 +12,8 @@ from pathlib import Path
 from speckled_chain import lint, load_corpus
 from speckled_gate.docs import DocError, load_task_list
 
-from .fixtures import SENTINEL, PlanRepo, brief, clean_project, frd, pdrd, research, task, tasks, tdd
+from .fixtures import (SENTINEL, PlanRepo, brief, clean_project, frd, pdrd, research, task, tasks, tdd,
+                       without_log)
 from .test_corpus import line_of
 
 TASKS = "tasks/F01-example.md"
@@ -34,7 +35,7 @@ class Structure(unittest.TestCase):
         return text
 
     def findings(self):
-        findings = lint(self.repo.root, history=False).findings
+        findings = without_log(lint(self.repo.root, history=False).findings)
         for f in findings:
             self.assertNotIn(SENTINEL, f.message)
             self.assertNotIn(SENTINEL, f.subject)
@@ -56,7 +57,7 @@ class Structure(unittest.TestCase):
 
     def test_clean_project(self):
         report = lint(self.repo.root, history=False)
-        self.assertEqual(report.findings, [])
+        self.assertEqual([f.rule for f in report.findings], ["warn-event"])   # the log's one `warn` line
         self.assertEqual(report.documents, 5)
 
     def test_research_with_free_form_id(self):

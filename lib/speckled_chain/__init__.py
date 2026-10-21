@@ -4,7 +4,8 @@ Why this package exists:
     The gate (`speckled_gate`) decides, one tool call at a time, whether an agent may
     act. This package looks at the whole planning repo afterwards: whether every
     document is well-formed, cites an approved parent, and was approved by someone
-    listed in `speckled.yaml`, and whether the history keeps approvals append-only.
+    listed in `speckled.yaml`, whether the history keeps approvals and the enforcement
+    log append-only, and which actions the gate let through in `warn` mode.
     It only reads; it never blocks anything. Protocol §9 lists its rules.
 
     It's a separate package so the hook's imports and start-up time stay unchanged.
@@ -31,6 +32,7 @@ from .approvals import check_append_only, check_approvers, check_reopened, curre
 from .chain import chain_for, check_chain
 from .config import ConfigError
 from .corpus import Corpus, load_corpus
+from .enforcement_log import check_log_history, check_log_now
 from .history import GitError, open_history
 from .report import Finding, Report, plugin_version
 from .rules import RULES, explain
@@ -56,9 +58,13 @@ def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
         findings += check_approvers(corpus, roles_for, added) + check_append_only(past)
         # Edits to approved or done documents reopen review [T-F08-10].
         findings += check_reopened(past)
+        # The enforcement log is only appended to [T-F08-11].
+        findings += check_log_history(past.log_changes, past.reader)
     else:
         # Without history, approvers are checked against the current roles [T-F08-07].
         findings += check_approvers(corpus, current_roles(corpus))
-    # Scoping and the remaining history and log checks are added by later tasks [T-F08-08].
+    # Every log line is valid, and every warn event is reported, with or without history [T-F08-11].
+    findings += check_log_now(corpus.root)
+    # Scoping is added by a later task [T-F08-12].
     return Report(project=corpus.config.project, plugin_version=plugin_version(), history=status,
                   documents=corpus.documents, commits=commits, findings=findings)

@@ -10,7 +10,7 @@ import unittest
 
 from speckled_chain import chain_for, lint, load_corpus
 
-from .fixtures import SENTINEL, PlanRepo, approval, clean_project, frd, pdrd, tasks, tdd
+from .fixtures import SENTINEL, PlanRepo, approval, clean_project, frd, pdrd, tasks, tdd, without_log
 from .test_corpus import line_of
 
 TDD = "tdds/F01-example.md"
@@ -28,7 +28,7 @@ class Chain(unittest.TestCase):
         return text
 
     def findings(self):
-        findings = lint(self.repo.root, history=False).findings
+        findings = without_log(lint(self.repo.root, history=False).findings)
         for f in findings:
             self.assertNotIn(SENTINEL, f.message)
         return findings

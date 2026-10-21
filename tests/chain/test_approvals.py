@@ -19,7 +19,7 @@ from speckled_chain import lint, load_corpus
 from speckled_chain.approvals import _broken, check_approvers, normalize
 
 from .fixtures import (AUTHOR, GATES, SENTINEL, PlanRepo, approval, clean_project, frd, git_env, pdrd,
-                       task, tasks)
+                       task, tasks, without_log)
 from .test_corpus import line_of
 
 FRD = "frds/F01-example.md"
@@ -42,7 +42,7 @@ class Approvers(unittest.TestCase):
         return text
 
     def findings(self):
-        findings = lint(self.repo.root, history=False).findings
+        findings = without_log(lint(self.repo.root, history=False).findings)
         for f in findings:
             self.assertNotIn(SENTINEL, f.message)
         return findings
