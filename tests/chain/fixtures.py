@@ -320,12 +320,13 @@ CLEAN_FILES = {
 }
 
 
-def clean_project(repo: PlanRepo) -> PlanRepo:
+def clean_project(repo: PlanRepo, warn: bool = True) -> PlanRepo:
     """Write and commit one full valid chain, one document per commit, then the log.
 
     BRIEF -> PDRD -> FRD-F01 -> TDD-F01 -> TASKS-F01, with T-F01-01 Done (its
     `Approved by` line has a note) and T-F01-02 In progress. The log has one `warn`
-    line and one `block` line.
+    line and one `block` line; with `warn=False`, only the `block` line, so the project
+    has no findings at all.
     """
     steps = [
         ("brief.md", brief()),
@@ -341,8 +342,8 @@ def clean_project(repo: PlanRepo) -> PlanRepo:
         repo.write(repo.doc(rel), text)
         if repo.has_git:
             repo.commit(f"Add {rel}")
-    repo.write(".speckled/log.jsonl", log_line("warn") + log_line("block", rule="git-commit", tool="Bash",
-                                                                   repo="", paths=[]))
+    block = log_line("block", rule="git-commit", tool="Bash", repo="", paths=[])
+    repo.write(".speckled/log.jsonl", (log_line("warn") if warn else "") + block)
     if repo.has_git:
         repo.commit("Log")
     return repo

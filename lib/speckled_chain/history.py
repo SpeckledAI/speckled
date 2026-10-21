@@ -32,6 +32,15 @@ How history is read:
     - After the commits, the working tree is compared with `HEAD`, read from disk.
     - `added_in()` gives each approval the first commit that added it (see there).
 
+Narrowing:
+    `open_history(root, docs_dir, only=globs)` reads only the documents whose paths
+    match `globs` (relative to the planning repo; `*` and `?` stay within one folder,
+    and `\\` escapes the next character), plus `speckled.yaml` and the log. git gets
+    them as `:(glob)` pathspecs, and the working tree is filtered the same way. A
+    document that was moved from a path outside `globs` looks added, and one moved to
+    such a path looks deleted, so the caller picks globs that cover every path a
+    document could have had, and rereads in full if a narrowed history has a deletion.
+
 What it gives:
     `open_history(root, docs_dir)` returns a `History`. Outside a git repository it
     has a `history-unavailable` warning and `status="none"`; in a shallow clone, a
@@ -44,6 +53,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -282,8 +292,11 @@ def _parse(data: bytes, path: str) -> tuple[str, dict | None, TaskList | None]:
 
 # --- opening the history ---------------------------------------------------------------
 
-def open_history(root: str | Path, docs_dir: str) -> History:
-    """Read the whole history of the planning repo at `root`. Raises GitError on failure."""
+def open_history(root: str | Path, docs_dir: str, only: list[str] | None = None) -> History:
+    """Read the history of the planning repo at `root`, or of the documents matching `only`.
+
+    Raises GitError on failure.
+    """
     root = Path(root)
     try:
         inside = _git(root, "rev-parse", "--is-inside-work-tree")
@@ -307,7 +320,7 @@ def open_history(root: str | Path, docs_dir: str) -> History:
 
     reader = BlobReader(root)
     try:
-        history = _Walk(root, _docs_prefix(docs_dir), reader, head.stdout.decode("ascii").strip()).run()
+        history = _Walk(root, _docs_prefix(docs_dir), reader, head.stdout.decode("ascii").strip(), only).run()
     except BaseException:
         reader.close()
         raise
@@ -323,6 +336,29 @@ def _in_a_repo(root: Path) -> bool:
 def _unavailable(severity: str, message: str) -> Finding:
     rule = RULES["history-unavailable"]
     return Finding("history-unavailable", severity, CONFIG, None, None, f"History: {message}", rule.fix)
+
+
+def glob_escape(path: str) -> str:
+    """`path` as a glob that matches only itself."""
+    return re.sub(r"([*?\[\\])", r"\\\1", path)
+
+
+def _glob_matcher(globs: list[str]):
+    """A test for paths matching any of `globs`, as git's `:(glob)` pathspecs match them."""
+    parts = []
+    for glob in globs:
+        out, i = [], 0
+        while i < len(glob):
+            c = glob[i]
+            if c == "\\" and i + 1 < len(glob):
+                out.append(re.escape(glob[i + 1]))
+                i += 2
+                continue
+            out.append("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c))
+            i += 1
+        parts.append("".join(out))
+    pattern = re.compile("|".join(f"(?:{p})" for p in parts)) if parts else None
+    return lambda path: pattern is not None and pattern.fullmatch(path) is not None
 
 
 def _docs_prefix(docs_dir: str) -> str:
@@ -345,9 +381,11 @@ class _Raw:
 class _Walk:
     """Replays the log commit by commit, keeping each commit's tracked files (path -> blob)."""
 
-    def __init__(self, root: Path, prefix: str, reader: BlobReader, head: str):
+    def __init__(self, root: Path, prefix: str, reader: BlobReader, head: str, only: list[str] | None = None):
         self.root = root
         self.prefix = prefix
+        self.only = only
+        self.matches = _glob_matcher(only) if only is not None else None
         self.reader = reader
         self.head = head
         self.history = History("full", reader=reader, head=head)
@@ -384,7 +422,7 @@ class _Walk:
         # `--relative`: paths relative to the planning repo, even inside a larger repository.
         args = ["-c", "core.quotepath=off", "log", "--full-history", "--topo-order", "--reverse", "--parents",
                 "-M", "--raw", "-z", "--no-abbrev", "--relative", "--diff-merges=first-parent", f"--format={_FORMAT}",
-                "--", self.prefix or ".", CONFIG, LOG]
+                "--", *self._pathspecs(), CONFIG, LOG]
         out = _check(_git(self.root, *args), "git log")
         tokens = out.split(b"\0")
         i, commit, records = 0, None, []
@@ -422,8 +460,17 @@ class _Walk:
         return _Raw(status, old_path if keep_old else None, old_blob if keep_old else None,
                     new_path if keep_new else None, new_blob if keep_new else None)
 
+    def _pathspecs(self) -> list[str]:
+        if self.only is None:
+            return [self.prefix or "."]
+        # No globs: nothing but the config and the log.
+        return [f":(glob){glob}" for glob in self.only]
+
     def _tracked(self, path: str) -> bool:
-        return path in (CONFIG, LOG) or (path.startswith(self.prefix) and path.endswith(".md"))
+        if path in (CONFIG, LOG):
+            return True
+        in_docs = path.startswith(self.prefix) and path.endswith(".md")
+        return in_docs and (self.matches is None or self.matches(path))
 
     # --- comparing two trees ---------------------------------------------------------
 

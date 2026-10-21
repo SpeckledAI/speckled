@@ -15,14 +15,16 @@ Why this package exists:
 What it exports:
     - `load_corpus(root) -> Corpus`: the config and every document, parsed once
       (`corpus.py`).
-    - `lint(root, *, history=True, feature=None, scope=None) -> Report`: run the checks.
-      Raises `ConfigError`, `GitError` or `OSError` where the command exits 2. It never
-      prints and never writes.
+    - `lint(root, *, history=True, feature=None, scope=None) -> Report`: run the checks
+      (see there). Raises `ConfigError`, `GitError` or `OSError` where the command exits
+      2. It never prints and never writes.
     - `chain_for(corpus, id) -> list[str]`: the IDs from a task or document up its
       chain, such as `T-F12-03` -> `[TASKS-F12, TDD-F12, FRD-F12, PDRD, BRIEF]`
       (`chain.py`).
-    - `Finding`, `Report`: the results (`report.py`).
+    - `Finding`, `Report`: the results (`report.py`): `Report.findings`,
+      `Report.to_json()` and `Report.exit_code(strict=False)`.
     - `RULES`, `explain`: the rule registry (`rules.py`).
+    - `ConfigError`, `GitError`: why a run couldn't happen.
 """
 from __future__ import annotations
 
@@ -36,6 +38,7 @@ from .enforcement_log import check_log_history, check_log_now
 from .history import GitError, open_history
 from .report import Finding, Report, plugin_version
 from .rules import RULES, explain
+from .scope import Scope
 from .structure import check_structure
 
 __all__ = ["lint", "load_corpus", "chain_for", "Corpus", "Finding", "Report", "RULES", "explain",
@@ -44,11 +47,30 @@ __all__ = ["lint", "load_corpus", "chain_for", "Corpus", "Finding", "Report", "R
 
 def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
          scope=None) -> Report:
-    """Check the planning repo at `root` and return the report."""
+    """Check the planning repo at `root` and return the report.
+
+    - `history=False` runs only the checks that need no history, and starts no git
+      process (`--docs`).
+    - `feature="F08"` keeps only the findings about `FRD-F08`, `TDD-F08`, `TASKS-F08`
+      and the `T-F08-*` tasks, including their parent checks (`--feature`).
+    - `scope=[ids]`, such as `chain_for(corpus, "T-F08-03")`, keeps only the findings
+      about those documents and their tasks.
+    With `feature` or `scope`, every check still runs, so the findings kept are the
+    ones a full run gives for those documents. Findings about the log and the project
+    as a whole are left out. The history read is narrowed to the paths the scoped
+    documents have or could have had (`scope.py`). If that narrowed history shows a
+    scoped document deleted, it may only have been moved from a path outside it, so the
+    whole history is read instead.
+    """
     corpus = load_corpus(root)
+    narrow = Scope.of(corpus, feature, scope) if feature is not None or scope is not None else None
     findings = list(corpus.broken.values()) + check_structure(corpus) + check_chain(corpus)
     status, commits = "none", 0
-    past = open_history(corpus.root, corpus.config.docs_dir) if history else None
+    past = None
+    if history:
+        past = open_history(corpus.root, corpus.config.docs_dir, only=narrow.globs if narrow else None)
+        if narrow is not None and any(change.new is None for change in past.changes):
+            past = open_history(corpus.root, corpus.config.docs_dir)
     if past is not None:
         findings += past.findings
         status, commits = past.status, len(past.commits)
@@ -65,6 +87,9 @@ def lint(root: str | Path, *, history: bool = True, feature: str | None = None,
         findings += check_approvers(corpus, current_roles(corpus))
     # Every log line is valid, and every warn event is reported, with or without history [T-F08-11].
     findings += check_log_now(corpus.root)
-    # Scoping is added by a later task [T-F08-12].
+    documents = corpus.documents
+    if narrow is not None:
+        findings = [f for f in findings if narrow.wants(f)]
+        documents = narrow.documents(corpus)
     return Report(project=corpus.config.project, plugin_version=plugin_version(), history=status,
-                  documents=corpus.documents, commits=commits, findings=findings)
+                  documents=documents, commits=commits, findings=findings)
