@@ -33,7 +33,9 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         python: ["3.9", "3.13"]
     env:
-      SPECKLED_PERF: "1"  # enables tests/gate/test_performance.py (p95 <= 100 ms)
+      # enables the performance tests: tests/gate/test_performance.py (p95 <= 100 ms)
+      # and tests/chain/test_performance.py (full run <= 5 s, --docs <= 1 s)
+      SPECKLED_PERF: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
