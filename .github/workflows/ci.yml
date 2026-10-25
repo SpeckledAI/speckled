@@ -30,7 +30,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # ubuntu-24.04, not ubuntu-latest: setup-python has no 3.9 build for newer Ubuntu
+        # images. action-smoke still runs on ubuntu-latest.
+        os: [ubuntu-24.04, macos-latest]
         python: ["3.9", "3.13"]
     env:
       # enables the performance tests: tests/gate/test_performance.py (p95 <= 100 ms)
