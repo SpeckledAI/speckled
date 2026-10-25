@@ -30,10 +30,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # ubuntu-24.04, not ubuntu-latest: setup-python has no 3.9 build for newer Ubuntu
+        # images. action-smoke still runs on ubuntu-latest.
+        os: [ubuntu-24.04, macos-latest]
         python: ["3.9", "3.13"]
     env:
-      SPECKLED_PERF: "1"  # enables tests/gate/test_performance.py (p95 <= 100 ms)
+      # enables the performance tests: tests/gate/test_performance.py (p95 <= 100 ms)
+      # and tests/chain/test_performance.py (full run <= 5 s, --docs <= 1 s)
+      SPECKLED_PERF: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -52,3 +56,49 @@ jobs:
         run: |
           /usr/bin/python3 --version
           python -m unittest tests.gate.test_performance -v
+
+  # Runs the lint-chain action as a planning repo would, with the runner's own python3:
+  # it must fail on a seeded fault and pass once the fault is fixed [T-F08-13].
+  # Its job summary should show both reports; check them on the run page.
+  action-smoke:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # The fixture builder only writes inside the temporary folder, so point it at the runner's.
+      - name: Build a planning repo with a seeded fault
+        run: TMPDIR="$RUNNER_TEMP" python3 tests/chain/action_fixture.py "$RUNNER_TEMP/fault" --fault
+      - name: Run the action on it
+        id: fault
+        continue-on-error: true
+        uses: ./actions/lint-chain
+        with:
+          path: ${{ runner.temp }}/fault/plans
+      - name: Expect failure with one error
+        env:
+          OUTCOME: ${{ steps.fault.outcome }}
+          ERRORS: ${{ steps.fault.outputs.errors }}
+          REPORT: ${{ steps.fault.outputs.report }}
+        run: |
+          [ "$OUTCOME" = failure ] || { echo "::error::expected failure, got '$OUTCOME'"; exit 1; }
+          [ "$ERRORS" = 1 ] || { echo "::error::expected errors=1, got '$ERRORS'"; exit 1; }
+          [ -f "$REPORT" ] || { echo "::error::no report at '$REPORT'"; exit 1; }
+
+      - name: Build the same planning repo with the fault fixed
+        run: TMPDIR="$RUNNER_TEMP" python3 tests/chain/action_fixture.py "$RUNNER_TEMP/fixed" --fixed
+      - name: Run the action on it
+        id: fixed
+        uses: ./actions/lint-chain
+        with:
+          path: ${{ runner.temp }}/fixed/plans
+      - name: Expect success with no errors
+        env:
+          ERRORS: ${{ steps.fixed.outputs.errors }}
+          REPORT: ${{ steps.fixed.outputs.report }}
+        run: |
+          [ "$ERRORS" = 0 ] || { echo "::error::expected errors=0, got '$ERRORS'"; exit 1; }
+          [ -f "$REPORT" ] || { echo "::error::no report at '$REPORT'"; exit 1; }

@@ -100,7 +100,7 @@ class AllowsSafeCalls(unittest.TestCase):
 
 
 class IndependentOfEnforcement(unittest.TestCase):
-    """The guard gives the same answers inside a project, whatever its enforcement mode (NFR6)."""
+    """The guard gives the same answers inside a project, whatever its enforcement mode."""
 
     def test_same_results_with_enforcement_on_or_off(self):
         for mode in ["block", "warn", "off"]:

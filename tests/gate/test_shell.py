@@ -9,7 +9,7 @@ def W(target, detail=""):
     return A("write", target, detail)
 
 
-# One positive case per row of the writer table (TASKS-F07, T-F07-04 step 5), plus
+# One positive case per kind of file-writing command [T-F07-04], plus
 # redirects. Each command must produce at least the listed actions.
 POSITIVE = [
     ("redirect >", "echo hi > out.txt", [W("out.txt")]),

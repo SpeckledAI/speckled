@@ -63,7 +63,7 @@ def main(argv: list[str]) -> int:
 
 
 def _log_guard_block(payload: dict, reason: str, argv: list[str]) -> None:
-    """Ask the gate to log the guard's block (TDD-F07 D14). The block stands whatever happens."""
+    """Ask the gate to log the guard's block. The block stands whatever happens."""
     try:
         import guard
         rule = {guard.RM_MESSAGE: "recursive-delete", guard.ENV_MESSAGE: "secret-env-file"}.get(reason)

@@ -26,6 +26,9 @@ approvals: []
 - **Status:** Todo
 <!-- guide: Keep the "Depends on" and "Status" lines exactly in this shape: the enforcement hook reads them (protocol §8). Status is exactly Todo, In progress, In review or Done. -->
 
+**Description**
+<!-- guide: In plain terms: what this feature is, what it does and why it is needed. -->
+
 **Context**
 <!-- guide: What the implementer needs to know: current code, patterns to follow, gotchas. -->
 

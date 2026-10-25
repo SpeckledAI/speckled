@@ -40,7 +40,7 @@ class Log(unittest.TestCase):
         self.assertRegex(e["ts"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
     def test_block_entry_has_exactly_the_v1_fields(self):
-        """A block is logged in the same format, with `mode: block` (TDD-F07 D14) [T-F07-20]."""
+        """A block is logged in the same format, with `mode: block` [T-F07-20]."""
         e = self.entry([], mode="block", rule="git-commit", task="T-F01-02")
         self.assertEqual(set(e), V1_FIELDS)
         self.assertEqual((e["v"], e["mode"], e["repo"], e["paths"], e["rule"]), (1, "block", "", [], "git-commit"))

@@ -7,7 +7,7 @@ Brief → PDRD → FRD → TDD → Tasks → Code, with a human approval at ever
 
 This repo is the **public, Apache-2.0 Claude Code plugin** and nothing else. Speckled is developed with Speckled, but its planning (brief, PDRD, FRDs, TDDs, task lists, `speckled.yaml`) lives in the private sibling repo `../speckled-hq`. Sessions usually run from there, with this repo listed under `repos`.
 
-**Never add product strategy here:** no brief or PDRD content, pricing, competitive analysis or business plans. This repo is public. Implementation work cites task IDs (`[T-F36-02]`) in commits; the documents those IDs refer to stay in `speckled-hq`.
+**Never add product strategy here:** no brief or PDRD content, pricing, competitive analysis or business plans. This repo is public. Implementation work cites task IDs (`[T-F36-02]`) in commits; the documents those IDs refer to stay in `speckled-hq`. Code, comments, tests and docs never cite those documents' requirement or design references (`FR3`, `NFR6`, `TDD-F07 D14`): readers can't look them up. Generic examples of how a project cites its own requirements are fine.
 
 ## Layout
 
@@ -28,7 +28,7 @@ This repo is the **public, Apache-2.0 Claude Code plugin** and nothing else. Spe
 - Load the plugin locally: `claude --plugin-dir ~/Desktop/speckled` (from `speckled-hq`: `claude --plugin-dir ../speckled`), then `/speckled:<skill>`.
 - Validate after changing plugin files: `claude plugin validate --strict .` (CI runs this; warnings fail it).
 - This file lives in `.claude/` on purpose: a root `CLAUDE.md` fails strict validation.
-- Bump `version` in `plugin.json` for every release, or installed users won't get the update.
+- Bump `version` in `plugin.json` for every release, or installed users won't get the update. Then tag the release commit `vX.Y.Z` (`git tag vX.Y.Z` and push the tag, or create a GitHub Release with that tag). Tagging is a human step: agents never tag. The `lint-chain` Action is pinned to these tags, so every release needs one. There's no moving `v0` tag.
 - Skills refer to other plugin files by paths relative to the skill's own directory (`../../protocol/...`). Keep it that way so the plugin works wherever it's installed.
 - Keep plugin content vendor-neutral (constraint C4): no project-, stack- or company-specific assumptions in agents, skills or templates.
 - `hooks/guard.py` must run on Python 3.9+ with no dependencies.

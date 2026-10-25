@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-25
+
+`lint-chain` checks a planning repo's record: that documents are well-formed, each was drafted from an approved parent, approvals were made by listed approvers and only ever added, approved documents weren't changed without a new review, and the enforcement log was only appended to. It reads the repo and its git history and changes nothing. A GitHub Action runs it in CI. From this release, every release is tagged `vX.Y.Z`.
+
+### Added
+- `bin/lint-chain`, the command, with `--docs`, `--feature`, `--json`, `--output`, `--strict` and `--explain`, and exit codes `0`, `1`, `2` and `64`. [T-F08-03] [T-F08-12]
+- `speckled_chain`, a standard-library Python package with the checks, usable as a library (`lint`, `load_corpus`, `chain_for`). It reads `speckled.yaml` and front matter with the bundled PyYAML. [T-F08-03] [T-F08-05] [T-F08-06] [T-F08-07] [T-F08-12]
+- Checks of the history: approvals and `Approved by` lines only ever added, approvers listed as of the commit that added them, documents moved rather than deleted, and edits to approved documents reviewed again. History is read with one `git log` and one `git cat-file` process. [T-F08-08] [T-F08-09] [T-F08-10]
+- Checks of `.speckled/log.jsonl`: lines never changed or removed, every line valid log format v1, and each `warn` line reported. [T-F08-11]
+- The `lint-chain` GitHub Action (`actions/lint-chain`), a composite action that needs no token, with a CI job that runs it on a seeded fault and on the fix. [T-F08-13]
+- Protocol §9 Chain checks: which files are documents, expected parents, the `Approved by` line, approvers, the append-only rules, every rule, a valid log line, and the JSON report. [T-F08-01]
+- Test fixtures that build planning repos with real git history, and a performance test on 50 documents and 500 commits. [T-F08-04] [T-F08-14]
+
+### Changed
+- Protocol §3 and §4: how the PDRD lists features, which folders hold documents, and that research note IDs are free-form. §5 rule 4 says which changes don't count as editing an approved document: task progress, an edit re-approved in the same commit, and whitespace. [T-F08-01]
+- `speckled_gate` parses each task's `Approved by` lines, including an optional note in brackets. The gate's behaviour is unchanged: a malformed line never makes it block. [T-F08-02]
+- `/speckled:approve` writes the exact `Approved by` shape, with a note in brackets after the date. The README describes `lint-chain`, the Action and their limits. [T-F08-15]
+
 ## [0.3.0] - 2026-10-15
 
 In `warn` mode, agents can no longer commit, push, open pull requests or change the gate's settings: those rules now block in both modes. Every block is now logged. `/speckled:init` suggests `warn` for every project. Projects with enforcement off are unaffected.

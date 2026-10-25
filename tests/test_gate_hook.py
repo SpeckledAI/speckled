@@ -79,9 +79,9 @@ class BlockMode(HookFixture):
                 if expected:
                     self.assertEqual(code, 2)
                     self.assertTrue(stderr.startswith("speckled: blocked: "), stderr)
-                    # Hard rules: two lines, no warn bypass (FR8) [T-F07-19].
+                    # Hard rules: two lines, no warn bypass [T-F07-19].
                     self.assertEqual(len(stderr.strip().split("\n")), 2 if expected in HARD_RULES else 3)
-                    # Every block is logged, one entry per violation (TDD-F07 D14) [T-F07-20].
+                    # Every block is logged, one entry per violation [T-F07-20].
                     self.assertEqual([(e["mode"], e["rule"]) for e in new], [("block", v.rule) for v in broken])
                 else:
                     self.assertEqual((code, stdout, stderr), (0, "", ""))
@@ -123,7 +123,7 @@ class WarnMode(HookFixture):
                 before = len(self.log_lines())
                 code, stdout, stderr = self.run_hook(self.payload(tool, tool_input, self.plans))
                 if expected in HARD_RULES:
-                    # Hard rules block in warn mode too, and are logged as blocks (FR2) [T-F07-20].
+                    # Hard rules block in warn mode too, and are logged as blocks [T-F07-20].
                     self.assertEqual((code, stdout), (2, ""))
                     self.assertTrue(stderr.startswith("speckled: blocked: "), stderr)
                     self.assertNotIn("warn", stderr)
@@ -183,7 +183,7 @@ class WrongStart(HookFixture):
 
 
 class StaysOutOfTheWay(HookFixture):
-    """NFR6: without enforcement the hook behaves as if it weren't installed."""
+    """Without enforcement the hook behaves as if it weren't installed."""
 
     def test_no_speckled_yaml(self):
         elsewhere = self.tmp / "elsewhere"

@@ -12,11 +12,11 @@ What it does:
     - `decide()` judges one action against the project and returns a `Verdict`:
       ok, or a violation naming the rule it breaks.
     - `outcome()` says what happens to a tool call given its verdicts and the mode:
-      hard rules block in either mode; task rules warn in warn mode (TDD-F07 D12).
+      hard rules block in either mode; task rules warn in warn mode.
     - `message()` turns a violation into the short message the agent and the human
       see: what's wrong, what to do next, and, for a task rule, how a human can bypass it.
 
-The order of checks (TDD-F07 F1 step 6; hard rules first, D13):
+The order of checks (hard rules first):
     0. a broken speckled.yaml blocks governed and protected files (`config-unreadable`);
     a. the gate's own controls are never changed by agents (`protected-path`);
     b. agents don't commit, push, open pull requests or start sessions without hooks;
@@ -78,20 +78,20 @@ class Verdict:
 
     @property
     def hard(self) -> bool:
-        """A hard rule blocks in warn mode too (TDD-F07 D12)."""
+        """A hard rule blocks in warn mode too."""
         return self.rule in HARD_RULES
 
 
 OK = Verdict()
 
 # Rules that guard what only humans may do and the gate itself: they block whatever the
-# mode (FRD-F07 FR2). Every other rule is a task rule, which warn mode allows and logs.
+# mode. Every other rule is a task rule, which warn mode allows and logs.
 HARD_RULES = frozenset({"protected-path", "hooks-disabled-session", "git-commit", "git-push",
                         "pull-request", "config-unreadable"})
 
 
 def outcome(mode: str, verdicts: list[Verdict]) -> str:
-    """What happens to a tool call: "ok", "warn" (allowed and logged) or "block" (D12)."""
+    """What happens to a tool call: "ok", "warn" (allowed and logged) or "block"."""
     violations = [v for v in verdicts if not v.ok]
     if not violations:
         return "ok"
@@ -163,13 +163,13 @@ def _git_root(cwd: str) -> Path:
 # --- deciding --------------------------------------------------------------------------
 
 def decide(project: Project, action: Action) -> Verdict:
-    """Whether `action` is allowed in `project` (TDD-F07 F1 step 6)."""
+    """Whether `action` is allowed in `project`."""
     if project.enforcement == "off":
         return OK
     group = classify(project, action.path) if action.path else None
     touches_controls_or_code = group in ("protected", "governed")
 
-    # Hard rules first (TDD-F07 D13), so warn mode can never let one through.
+    # Hard rules first, so warn mode can never let one through.
     # 0. A broken config blocks governed and protected files.
     if project.config_error and touches_controls_or_code:
         return Verdict("config-unreadable", action, facts={"error": project.config_error})
@@ -192,7 +192,7 @@ def decide(project: Project, action: Action) -> Verdict:
 def validate_task(project: Project, task_id: str | None, files: list[str] | None = None) -> Verdict:
     """Whether `task_id` may be worked on now; shared by `decide` and task activation.
 
-    `files` (from the active-task marker, TDD-F07 D5) names the task lists that hold the
+    `files` (from the active-task marker) names the task lists that hold the
     task and its dependencies. Only those are read, freshly each time; if they no longer
     hold what was recorded, every list is read instead. The verdict is the same either
     way, except that a broken list the task doesn't need is never read.
@@ -300,7 +300,7 @@ def activate(project: Project, task_id: str, by: str = "") -> Verdict:
     (task-not-started) or Done (task-done); every dependency exists (dependency-missing)
     and is Done (dependency-not-done). Only on success does it write
     `.speckled/active-task`, atomically, including the task-list files that hold the
-    task and its dependencies, so later checks read only those (TDD-F07 D5). On failure
+    task and its dependencies, so later checks read only those. On failure
     the marker is left unchanged. The marker is per developer (git-ignored), because two
     people on the same repo work on different tasks. `/speckled:build` runs this through
     `speckled-gate activate`; it's the only way the marker changes, and the agent's own
@@ -322,7 +322,7 @@ def activate(project: Project, task_id: str, by: str = "") -> Verdict:
 
 
 def _files_for(project: Project, task_id: str) -> list[str]:
-    """The task lists holding `task_id` and its dependencies, relative to `docs_dir` (D5)."""
+    """The task lists holding `task_id` and its dependencies, relative to `docs_dir`."""
     lists = load_task_lists(project.docs_dir)
     task_list, task = find_task(lists, task_id)
     holders = [task_list] + [find_task(lists, dep)[0] for dep in task.depends_on]
@@ -339,11 +339,11 @@ def _check_active_task(project: Project, action: Action) -> Verdict:
 # --- messages --------------------------------------------------------------------------
 
 def message(verdict: Verdict, mode: str, project: Project) -> str:
-    """The message for a violation: reason, next step, and the bypass (TDD-F07 §5).
+    """The message for a violation: reason, next step, and the bypass.
 
     `mode` is what happens to the call: pass `outcome()`, not the project's setting, so
     a hard rule in warn mode is shown as a block. A blocked hard rule gets two lines:
-    warn mode wouldn't allow it, so the message never suggests it (FRD-F07 FR8).
+    warn mode wouldn't allow it, so the message never suggests it.
     """
     reason, next_step = _explain(verdict, project)
     if verdict.hard and mode == "block":

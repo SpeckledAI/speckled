@@ -1,0 +1,66 @@
+name: Speckled lint-chain
+description: Check a Speckled planning repo's documents, approvals and history, and write the report to the job summary.
+author: Speckled
+
+inputs:
+  path:
+    description: The planning repo's folder, relative to the workspace.
+    required: false
+    default: "."
+  strict:
+    description: '"true" to count warnings as errors.'
+    required: false
+    default: "false"
+
+outputs:
+  errors:
+    description: Number of errors found.
+    value: ${{ steps.lint.outputs.errors }}
+  warnings:
+    description: Number of warnings found.
+    value: ${{ steps.lint.outputs.warnings }}
+  report:
+    description: Path to the JSON report.
+    value: ${{ steps.lint.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - id: lint
+      shell: bash
+      # Inputs reach the script only through the environment, never interpolated into it,
+      # so a crafted input can't inject shell commands [T-F08-13].
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_STRICT: ${{ inputs.strict }}
+      run: |
+        report="$RUNNER_TEMP/lint-chain.json"
+        rm -f "$report"
+        args=(--project "$INPUT_PATH" --output "$report")
+        if [ "$INPUT_STRICT" = "true" ]; then
+          args+=(--strict)
+        fi
+
+        set +e
+        text=$(python3 "$GITHUB_ACTION_PATH/../../bin/lint-chain" "${args[@]}" 2>&1)
+        code=$?
+        set -e
+
+        printf '%s\n' "$text"
+        {
+          echo '### lint-chain'
+          echo
+          echo '```text'
+          printf '%s\n' "$text"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        # No report means lint-chain couldn't run (exit 2); its message is in the summary.
+        if [ -f "$report" ]; then
+          python3 -c 'import json, sys
+        summary = json.load(open(sys.argv[1], encoding="utf-8"))["summary"]
+        print("errors=%d" % summary["errors"])
+        print("warnings=%d" % summary["warnings"])' "$report" >> "$GITHUB_OUTPUT"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+        fi
+        exit "$code"

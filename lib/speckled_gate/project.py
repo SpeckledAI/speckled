@@ -22,7 +22,7 @@ What it does:
         free       everything else, including documents in the planning repo
 
 Failing closed:
-    A broken `speckled.yaml` must not switch the gate off (NFR4). If the file can't be
+    A broken `speckled.yaml` must not switch the gate off. If the file can't be
     read but still contains `enforcement: warn` or `block`, the project keeps that mode
     and records the error; since its repos are then unknown, everything outside the
     planning repo counts as governed. An unrecognised mode is treated as `block`.
@@ -63,7 +63,7 @@ class Project:
     config_error: str | None = None  # why speckled.yaml couldn't be used, if it couldn't
     # Set when the session started in a code repo instead of the planning repo: the
     # code repo's path. Speckled sessions start in the planning repo, so the rules
-    # block governed and protected actions from a wrong start (TDD-F07 D4).
+    # block governed and protected actions from a wrong start.
     wrong_start: Path | None = None
 
     @property
@@ -114,7 +114,7 @@ def load_project(root: str | Path, plugin_root=None, plugin_data=None, home=None
     try:
         config = loads(text)
     except YamlError as e:
-        # Unreadable: keep a mode the author clearly set, so the gate stays on (NFR4).
+        # Unreadable: keep a mode the author clearly set, so the gate stays on.
         found = _RAW_MODE.search(text)
         mode = found.group(1) if found else "off"
         return Project(enforcement=mode, config_error=f"{CONFIG}: {e}", **base)
@@ -198,7 +198,7 @@ def classify(project: Project, path: str | Path, cwd: str | Path | None = None) 
     if any(_matches(target, p, tree) for p, tree in _protected(project)):
         return "protected"
     if project.repos_unknown:
-        # Config unreadable: anything outside the planning repo may be code (NFR4).
+        # Config unreadable: anything outside the planning repo may be code.
         return "free" if _within(target, project.root) else "governed"
     for repo in project.repos:
         if _within(target, repo):
@@ -219,7 +219,7 @@ def repo_for(project: Project, path: str | Path) -> tuple[str, str] | None:
 
 
 def _protected(project: Project) -> list[tuple[Path, bool]]:
-    """The protected paths (TDD-F07 §7 S3), each with True if everything under it counts."""
+    """The protected paths, each with True if everything under it counts."""
     root = project.root
     entries = [(root / CONFIG, False), (root / ".speckled", True), (root / ".git" / "hooks", True),
                (project.home / ".claude" / "settings.json", False)]
@@ -230,7 +230,7 @@ def _protected(project: Project) -> list[tuple[Path, bool]]:
         entries.append((project.plugin_data, True))
     if project.plugin_root:
         if any(_within(project.plugin_root, repo) for repo in project.repos):
-            # Dogfooding (D10): the plugin is itself a listed code repo, so its code is
+            # Dogfooding: the plugin is itself a listed code repo, so its code is
             # governed like any other; only the file that loads the hooks stays protected.
             entries.append((project.plugin_root / "hooks" / "hooks.json", False))
         else:

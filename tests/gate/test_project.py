@@ -193,7 +193,7 @@ class Classify(Base):
 
 
 class DogfoodingLayout(Base):
-    """D10: the plugin's working copy is itself a listed code repo."""
+    """The plugin's working copy is itself a listed code repo."""
 
     def test_only_hooks_json_is_protected(self):
         plugin = self.paths.repos["api"]  # pretend the plugin is loaded from ../api

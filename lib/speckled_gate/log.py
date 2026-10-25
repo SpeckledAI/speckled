@@ -5,7 +5,7 @@ Why this module exists:
     and in either mode it blocks some actions outright. The team, and later the
     traceability linter, need to see both, so each one is appended to
     `.speckled/log.jsonl` in the planning repo, which is committed. An entry's `mode` is
-    the outcome: `warn` (allowed and logged) or `block` (refused) (TDD-F07 D14).
+    the outcome: `warn` (allowed and logged) or `block` (refused).
 
 What it does:
     - `entry()` builds one log entry in format version 1 (documented in the protocol):

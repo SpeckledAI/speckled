@@ -57,7 +57,7 @@ class Fixture(unittest.TestCase):
         self._tmp.cleanup()
 
     def project(self, active=None, plugin_root=None, files=None):
-        """The fixture project; `active` writes the marker, with `files` if given (D5)."""
+        """The fixture project; `active` writes the marker, with `files` if given."""
         if active:
             (self.plans / ".speckled").mkdir(exist_ok=True)
             marker = {"v": 1, "task": active, **({"files": files} if files else {})}
@@ -95,7 +95,7 @@ def bash(command):
 
 
 class RuleTable(Fixture):
-    """At least 20 allow/block cases (NFR7); every rule value in TDD-F07 §4 appears."""
+    """At least 20 allow/block cases; every rule value the gate can report appears."""
 
     def rows(self):
         app, plans = self.app, self.plans
@@ -111,7 +111,7 @@ class RuleTable(Fixture):
             ("list not approved", "T-F02-01", edit(app / "src/x.py"), plans, "task-list-not-approved"),
             ("unknown active task", "T-F99-01", edit(app / "src/x.py"), plans, "no-active-task"),
             ("planning doc is free", None, edit(plans / "docs/frds/F01.md"), plans, None),
-            ("approval edit in docs is free (FR9)", None, edit(plans / "docs/tasks/F01.md"), plans, None),
+            ("approval edit in docs is free", None, edit(plans / "docs/tasks/F01.md"), plans, None),
             ("file outside every repo", None, edit(self.tmp / "notes.txt"), plans, None),
             ("exempt file", None, edit(app / "poetry.lock"), plans, None),
             ("speckled.yaml protected", "T-F01-02", ("Write", {"file_path": str(plans / "speckled.yaml")}),
@@ -153,7 +153,7 @@ class RuleTable(Fixture):
                 self.assertEqual(self.rule(project, tool, tool_input, cwd), expected)
 
     def test_same_verdicts_with_the_task_pointer(self):
-        """D5 (TDD-F07 v4): recorded task-list files never change a verdict [T-F07-16]."""
+        """Recorded task-list files never change a verdict [T-F07-16]."""
         for name, active, (tool, tool_input), cwd, expected in self.rows():
             with self.subTest(name):
                 marker = self.plans / ".speckled" / "active-task"
@@ -166,7 +166,7 @@ class RuleTable(Fixture):
         project = self.project("T-F01-02")
         project.wrong_start = self.app
         self.assertEqual(self.rule(project, *edit(self.app / "src/x.py")), "wrong-start-folder")
-        # Hard rules come first (TDD-F07 D13), so warn mode can't let this through [T-F07-19].
+        # Hard rules come first, so warn mode can't let this through [T-F07-19].
         self.assertEqual(self.rule(project, *edit(self.plans / "speckled.yaml")), "protected-path")
         self.assertEqual(self.rule(project, *bash("git commit -m x"), self.app), "git-commit")
         self.assertIsNone(self.rule(project, *edit(self.plans / "docs/frds/F01.md")))
@@ -195,7 +195,7 @@ class RuleTable(Fixture):
         self.assertIsNone(self.rule(project, *bash("git push")))
 
     def test_kind_and_outcome_for_every_row(self):
-        """TDD-F07 D12: hard rules block in both modes; task rules warn in warn [T-F07-19]."""
+        """Hard rules block in both modes; task rules warn in warn [T-F07-19]."""
         for name, active, (tool, tool_input), cwd, expected in self.rows():
             with self.subTest(name):
                 marker = self.plans / ".speckled" / "active-task"
@@ -264,7 +264,7 @@ class Messages(Fixture):
         return out
 
     def test_every_rule_has_a_message(self):
-        """Task rules: three lines. Blocked hard rules: two, never suggesting warn (FR8) [T-F07-19]."""
+        """Task rules: three lines. Blocked hard rules: two, never suggesting warn [T-F07-19]."""
         seen = set()
         for verdict, project in self.violations():
             seen.add(verdict.rule)
