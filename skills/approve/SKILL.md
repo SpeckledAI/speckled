@@ -24,6 +24,6 @@ Target: $ARGUMENTS
 4. **Record it.**
    - **Document:** set `status: approved`, update `updated`, and append to `approvals`:
      `{by: <name>, role: <gate>, date: <YYYY-MM-DD>, version: <version>, note: "<note, if given>"}`
-   - **Task:** in its task list, set the task's status to `Done`, and add a line under the task: `Approved by <name> on <date>`. If every task is now Done, ask whether to set the task list to `done` and move the feature's documents to `completed/`.
+   - **Task:** in its task list, set the task's status to `Done`, and add a line under the task: `Approved by <name> on <YYYY-MM-DD>`. If the human gave a note, put it in brackets after the date: `Approved by <name> on <YYYY-MM-DD> (<note>)`. Use exactly this shape, on a line of its own inside the task's block (protocol §9, "The `Approved by` line"): `lint-chain` reports any other shape, and once committed the line can't be corrected. If every task is now Done, ask whether to set the task list to `done` and move the feature's documents to `completed/`.
 5. **Confirm** in one line, and name the next step in the pipeline.
 6. **Don't commit**: leave the change for the human to review and commit, and suggest a commit message.

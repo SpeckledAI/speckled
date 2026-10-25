@@ -1,8 +1,9 @@
-"""The rule registry and protocol §9 agree [T-F08-03].
+"""The rule registry, protocol §9 and the README agree [T-F08-03] [T-F08-15].
 
 `rules.py` is what `lint-chain` reports and `--explain` prints; protocol §9 is what
 users read. This test fails if a rule, its default severity or its meaning differ.
-It also keeps internal planning references out of both.
+The README must describe every rule, the command and the release tags. Internal
+planning references are kept out of all of them.
 """
 import re
 import subprocess
@@ -64,6 +65,33 @@ class RegistryMatchesProtocol(unittest.TestCase):
                 self.assertIn(rule.fix, text)
 
 
+LINT_CHAIN_SECTION = "## Checking the record: `lint-chain`"
+
+
+class ReadmeDescribesLintChain(unittest.TestCase):
+    def test_section_names_every_rule(self):
+        text = section(ROOT / "README.md", LINT_CHAIN_SECTION)
+        for rule in RULES:
+            with self.subTest(rule=rule):
+                self.assertIn(f"`{rule}`", text)
+        self.assertIn("(protocol/documents.md)", text)
+
+    def test_section_states_the_limits(self):
+        text = section(ROOT / "README.md", LINT_CHAIN_SECTION)
+        self.assertIn("Approver names aren't verified", text)
+        self.assertIn("Rewritten history can't be detected", text)
+
+    def test_section_is_in_contents(self):
+        contents = section(ROOT / "README.md", "## Contents")
+        self.assertIn("(#checking-the-record-lint-chain)", contents)
+
+    def test_what_this_plugin_runs(self):
+        self.assertIn("`bin/lint-chain`", section(ROOT / "README.md", "## What this plugin runs"))
+
+    def test_release_rule_tags_releases(self):
+        self.assertIn("`vX.Y.Z`", (ROOT / ".claude" / "CLAUDE.md").read_text(encoding="utf-8"))
+
+
 class NoInternalReferences(unittest.TestCase):
     def assertClean(self, text, where):
         for pattern in INTERNAL_REFS:
@@ -88,6 +116,14 @@ class NoInternalReferences(unittest.TestCase):
                                      capture_output=True, text=True, timeout=30)
                 self.assertEqual(out.returncode, 0)
                 self.assertClean(out.stdout, "--explain")
+
+    def test_readme_section_and_action_readme(self):
+        texts = {"README.md": section(ROOT / "README.md", LINT_CHAIN_SECTION),
+                 "actions/lint-chain/README.md": (ROOT / "actions" / "lint-chain" / "README.md").read_text(
+                     encoding="utf-8")}
+        for where, text in texts.items():
+            with self.subTest(where=where):
+                self.assertClean(text, where)
 
     def test_package_and_tests(self):
         files = [BIN, *sorted((ROOT / "lib" / "speckled_chain").glob("*.py")),
